@@ -1,4 +1,3 @@
-import os
 import pathlib
 
 import pytest
@@ -7,7 +6,7 @@ from bioio_ome_zarr import Reader as ZarrReader
 from click.testing import CliRunner
 from numpy.testing import assert_array_equal
 
-from bioio_conversion.conversion_cli import main
+from bioio_conversion.cli_conversion import main
 
 from .conftest import LOCAL_RESOURCES_DIR
 
@@ -24,41 +23,41 @@ def test_cli_file_to_zarr(
 ) -> None:
     # Arrange
     runner = CliRunner()
-    base_path = LOCAL_RESOURCES_DIR / filename
-    base = os.path.splitext(filename)[0]
-    zarr_name = f"{base}_converted"
+    tiff = LOCAL_RESOURCES_DIR / filename
+    base = tiff.stem
+    out_name = f"{base}_converted"
 
     # Act
     result = runner.invoke(
         main,
         [
-            str(base_path),
+            str(tiff),
             "-d",
             str(tmp_path),
             "-n",
-            zarr_name,
-            "--scene",
+            out_name,
+            "-f",
+            "ome-zarr",
+            "-s",
             str(scene_index),
             "--overwrite",
         ],
     )
 
-    # Asset
-    assert result.exit_code == 0, result.output  # run was good
-    zarr_path = tmp_path / f"{zarr_name}.ome.zarr"
+    # Assert
+    assert result.exit_code == 0, result.output
+    zarr_path = tmp_path / f"{out_name}.ome.zarr"
+    assert zarr_path.exists()
 
-    bio_in = BioImage(str(base_path))
+    bio_in = BioImage(str(tiff))
     bio_in.set_scene(scene_index)
     bio_out = BioImage(str(zarr_path))
+    bio_out.set_scene(0)
 
     assert bio_in.shape == bio_out.shape
     assert bio_in.dtype == bio_out.dtype
     assert bio_in.channel_names == bio_out.channel_names
-
-    data_in = bio_in.get_image_data()
-    data_out = bio_out.get_image_data()
-
-    assert_array_equal(data_out, data_in)
+    assert_array_equal(bio_out.get_image_data(), bio_in.get_image_data())
 
 
 @pytest.mark.parametrize(
