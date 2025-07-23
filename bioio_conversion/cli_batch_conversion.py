@@ -1,11 +1,9 @@
-#!/usr/bin/env python
-# bioio_conversion/batch_converter_cli.py
-
 import json
 from typing import Any, Dict, Optional, Tuple
 
 import click
-from converters.batch_converter import BatchConverter
+
+from .converters.batch_converter import BatchConverter
 
 
 @click.command()
@@ -100,7 +98,7 @@ def main(
     else:  # list
         if not paths:
             raise click.BadParameter("--paths is required in list mode")
-        jobs = bc.from_list(paths)
+        jobs = bc.from_list(list(paths))
 
     click.echo(f"Discovered {len(jobs)} job(s), commencing conversion…")
     bc.run_jobs(jobs)

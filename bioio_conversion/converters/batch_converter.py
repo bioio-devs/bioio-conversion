@@ -1,16 +1,10 @@
-# bioio_conversion/batch_converter.py
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type, Union
 
 import pandas as pd
 
-from bioio_conversion.converters.ome_zarr_converter import OmeZarrConverter
-
-# Map converter keys to classes
-_CONVERTERS: Dict[str, Type] = {
-    "ome-zarr": OmeZarrConverter,
-}
+from .ome_zarr_converter import OmeZarrConverter
 
 
 class BatchConverter:
@@ -25,6 +19,11 @@ class BatchConverter:
 
     Default parameters for all jobs may be provided via `default_opts`.
     """
+
+    # Map converter keys to classes
+    _CONVERTERS: Dict[str, Type] = {
+        "ome-zarr": OmeZarrConverter,
+    }
 
     def __init__(
         self,
@@ -42,9 +41,9 @@ class BatchConverter:
         default_opts : dict, optional
             Shared default options for each job (e.g. destination, tbatch, overwrite).
         """
-        if converter_key not in _CONVERTERS:
+        if converter_key not in self._CONVERTERS:
             raise KeyError(f"Unknown converter: {converter_key}")
-        self.converter_cls = _CONVERTERS[converter_key]
+        self.converter_cls = self._CONVERTERS[converter_key]
         self.default_opts = default_opts.copy() if default_opts else {}
 
     def from_csv(self, csv_path: Union[str, Path]) -> List[Dict[str, Any]]:

@@ -1,11 +1,9 @@
-# bioio_conversion/conversion_cli.py
-
 from typing import Any, List, Optional, Tuple, Union
 
 import click
 from bioio_ome_zarr.writers import DimTuple
 
-from bioio_conversion.converters.ome_zarr_converter import OmeZarrConverter
+from .converters.ome_zarr_converter import OmeZarrConverter
 
 _CONVERTERS = {
     "ome-zarr": OmeZarrConverter,

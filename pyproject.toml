@@ -26,6 +26,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dynamic = ["version"]
+
 dependencies = [
   "bioio>=3.0.0",
   "bioio-ome-tiff>=1.4.0",
@@ -35,6 +36,11 @@ dependencies = [
   "numcodecs>=0.10.0",
   "scikit-image>=0.19.0",
 ]
+
+# Console script entry points
+[project.scripts]
+bioio-convert = "bioio_conversion.cli_conversion:main"
+bioio-batch-convert   = "bioio_conversion.cli_batch_conversion:main"
 
 # extra dependencies
 # https://peps.python.org/pep-0621/#dependencies-optional-dependencies
@@ -47,9 +53,8 @@ test = [
   "pytest>=5.4.3",
   "pytest-cov>=2.9.0",
   "pytest-raises>=0.11",
-  "numpy>=1.24.0",  
+  "numpy>=1.24.0",
 ]
-
 
 # build settings
 # https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html
@@ -63,7 +68,7 @@ exclude = ["*docs/*", "*tests/*"]
 [tool.setuptools.package-data]
 "*" = ["*.yaml", "py.typed"]
 
-# tools
+# formatting + linting
 [tool.black]
 line-length = 88
 
@@ -87,6 +92,7 @@ ignore = [
   "scripts/*",
 ]
 
+# static typing
 [tool.mypy]
 files = "bioio_conversion/*.py"
 ignore_missing_imports = true
@@ -94,8 +100,7 @@ disallow_untyped_defs = true
 check_untyped_defs = true
 show_error_codes = true
 
-# https://flake8.pycqa.org/en/latest/user/options.html
-# https://gitlab.com/durko/flake8-pyprojecttoml
+# linting
 [tool.flake8]
 max-line-length = 88
 ignore = "E203,E402,W291,W503"
