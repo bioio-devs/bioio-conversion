@@ -93,10 +93,12 @@ use_parentheses = true
 ignore = [
   ".editorconfig",
   ".pre-commit-config.yaml",
+  ".gitchangelog.rc",
   "CODE_OF_CONDUCT.md",
   "CONTRIBUTING.md",
   "Justfile",
-  "scripts/*",
+  "*docs/**",
+  "*tests/**",
 ]
 
 # static typing
