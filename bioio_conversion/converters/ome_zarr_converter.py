@@ -1,3 +1,5 @@
+import re
+import warnings
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
@@ -178,6 +180,21 @@ class OmeZarrConverter:
         an independent .ome.zarr file named:
             {self.name}_{scene_name}.ome.zarr
         """
+
+        # This is really only for windows
+        if len(self.scenes) > 1:
+            invalid = []
+            for i in self.scenes:
+                name = BioImage(self.source).scenes[i]
+                if re.search(r'[<>:"/\\|?*]', name):
+                    invalid.append(name)
+            if invalid:
+                warnings.warn(
+                    f"Scene names {invalid} contain invalid chars and will be "
+                    "sanitized for the output file name.",
+                    UserWarning,
+                )
+
         for idx in self.scenes:  # This could be parallelized
             bio = BioImage(self.source)
             bio.set_scene(idx)
@@ -202,8 +219,12 @@ class OmeZarrConverter:
 
             # determine output name: append scene name if >1
             scene_name = bio.scenes[idx]
-            out_name = (
-                self.name if len(self.scenes) == 1 else f"{self.name}_{scene_name}"
+
+            # remove invalid chars
+            out_name = re.sub(
+                r'[<>:"/\\|?*]',
+                "_",
+                (self.name if len(self.scenes) == 1 else f"{self.name}_{scene_name}"),
             )
             full_path = Path(self.destination) / f"{out_name}.ome.zarr"
 

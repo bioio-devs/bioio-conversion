@@ -1,5 +1,6 @@
 import os
 import pathlib
+import re
 from typing import List, Optional, Tuple, Union
 
 import pytest
@@ -59,7 +60,8 @@ def test_file_to_zarr_multi_scene(
             if len(expected_scenes) > 1
             else f"{base}_converted"
         )
-        zarr_path = tmp_path / f"{out_name}.ome.zarr"
+        safe_name = re.sub(r'[<>:"/\\|?*]', "_", out_name)
+        zarr_path = tmp_path / f"{safe_name}.ome.zarr"
         assert zarr_path.exists(), f"Missing output for scene {idx}: {zarr_path}"
 
         # load back
