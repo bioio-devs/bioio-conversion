@@ -62,7 +62,7 @@ from bioio_conversion.converters import OmeZarrConverter
 conv = OmeZarrConverter(
     source='multi_scene.czi',
     destination='zarr_output',
-    scenes='all',        # export every scene
+    scenes=-1,        # export every scene
     name='experiment1',   # custom base name
     overwrite=True,       # remove existing store
     tbatch=2,             # 2 timepoints per write batch
@@ -102,7 +102,7 @@ bioio-convert sample.czi -d out_dir -n my_run --overwrite
 #### Export all scenes
 
 ```bash
-bioio-convert multi_scene.ome.tiff -d zarr_out --scene all
+bioio-convert multi_scene.ome.tiff -d zarr_out --scene "all"
 ```
 
 #### Export specific scenes
