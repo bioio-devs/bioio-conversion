@@ -25,7 +25,6 @@ class OmeZarrConverter:
         destination: str,
         scenes: Union[int, List[int]] = 0,
         name: Optional[str] = None,
-        overwrite: bool = False,
         tbatch: int = 1,
         level_scales: Optional[List[DimTuple]] = None,
         xy_scale: Optional[Tuple[float, ...]] = None,
@@ -53,8 +52,6 @@ class OmeZarrConverter:
             Base name for output files (defaults to source stem). When
             exporting multiple scenes, each file is suffixed with the
             scene’s name.
-        overwrite : bool
-            If True, remove any existing Zarr store at the target path.
         tbatch : int
             Number of timepoints per batch when streaming writes.
         level_scales : Optional[List[DimTuple]]
@@ -87,15 +84,16 @@ class OmeZarrConverter:
         """
         self.source = source
         self.destination = destination
-        self.raw_scenes = scenes
         self.name = name or Path(source).stem
-        self.overwrite = overwrite
         self.tbatch = tbatch
         self.memory_target = memory_target
 
+        # probe to get all metadata and scenes up front
         bio_probe = BioImage(self.source)
-        total = len(bio_probe.scenes)
+        self.scene_names = bio_probe.scenes
+        total = len(self.scene_names)
 
+        # Scene selection logic
         if isinstance(scenes, int):
             if scenes < 0:
                 self.scenes = list(range(total))
@@ -112,15 +110,14 @@ class OmeZarrConverter:
             self.scenes = scenes.copy()
 
         # dtype & channel names come from scene 0 by default
-        bio0 = BioImage(self.source)
-        bio0.set_scene(self.scenes[0])
-        self.dtype = np.dtype(dtype) if dtype is not None else bio0.dtype
-        dims0 = bio0.dims
+        bio_probe.set_scene(0)
+        self.dtype = np.dtype(dtype) if dtype is not None else bio_probe.dtype
+        dims0 = bio_probe.dims
         self.channels = list(range(dims0.C))
         self.channel_names = (
             channel_names
             if channel_names is not None
-            else (bio0.channel_names or [f"Channel:{i}" for i in self.channels])
+            else (bio_probe.channel_names or [f"Channel:{i}" for i in self.channels])
         )
 
         # Build level_scales
@@ -185,7 +182,7 @@ class OmeZarrConverter:
         if len(self.scenes) > 1:
             invalid = []
             for i in self.scenes:
-                name = BioImage(self.source).scenes[i]
+                name = self.scene_names[i]
                 if re.search(r'[<>:"/\\|?*]', name):
                     invalid.append(name)
             if invalid:
@@ -218,7 +215,7 @@ class OmeZarrConverter:
             }
 
             # determine output name: append scene name if >1
-            scene_name = bio.scenes[idx]
+            scene_name = self.scene_names[idx]
 
             # remove invalid chars
             out_name = re.sub(
@@ -228,14 +225,8 @@ class OmeZarrConverter:
             )
             full_path = Path(self.destination) / f"{out_name}.ome.zarr"
 
-            # clean/overwrite
             if full_path.exists():
-                if self.overwrite:
-                    import shutil
-
-                    shutil.rmtree(full_path)
-                else:
-                    raise FileExistsError(f"{full_path} exists; set overwrite=True.")
+                raise FileExistsError(f"{full_path} already exists.")
 
             # compute shapes & chunks
             lvl_shapes = self.get_level_shapes(shape5, self.level_scales, self.channels)

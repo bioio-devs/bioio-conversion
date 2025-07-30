@@ -45,7 +45,6 @@ def test_file_to_zarr_multi_scene(
         destination=str(tmp_path),
         scenes=scenes_input,
         name=base + "_converted",
-        overwrite=True,
         tbatch=1,
     )
     conv.convert()
@@ -111,7 +110,6 @@ def test_zarr_resolution_levels(
     conv = OmeZarrConverter(
         source=str(tiff_path),
         destination=str(out_dir),
-        overwrite=True,
         name=zarr_name,
         tbatch=1,
         level_scales=level_scales,
@@ -158,7 +156,6 @@ def test_zarr_per_axis_scales(
     conv = OmeZarrConverter(
         source=str(tiff_path),
         destination=str(out_dir),
-        overwrite=True,
         name=zarr_name,
         tbatch=1,
         xy_scale=xy_scale,

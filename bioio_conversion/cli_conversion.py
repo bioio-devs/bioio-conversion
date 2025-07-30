@@ -91,11 +91,6 @@ def parse_scenes(text: str, total_scenes: int) -> Union[int, List[int]]:
     help="Scene(s) to export: 'all', a single index, or comma-list (e.g. 0,2)",
 )
 @click.option(
-    "--overwrite/--no-overwrite",
-    default=False,
-    help="Overwrite existing output folders",
-)
-@click.option(
     "--tbatch", default=1, type=int, help="Number of timepoints per write batch"
 )
 @click.option(
@@ -140,7 +135,6 @@ def main(
     name: Optional[str],
     fmt: str,
     scenes: str,
-    overwrite: bool,
     tbatch: int,
     level_scales: Optional[str],
     xy_scale: Optional[str],
@@ -154,8 +148,6 @@ def main(
 
     You can export one scene, multiple scenes, or all scenes in a single run.
     """
-    # 1) Parse scenes
-    #   need total to validate list lengths later
     from bioio import BioImage
 
     total = len(BioImage(source).scenes)
@@ -165,7 +157,6 @@ def main(
     init_opts: dict[str, Any] = {
         "destination": destination,
         "scenes": scenes_arg,
-        "overwrite": overwrite,
         "tbatch": tbatch,
         "memory_target": memory_target,
     }

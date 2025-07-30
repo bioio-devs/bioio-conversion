@@ -24,7 +24,6 @@ def test_run_jobs_from_list(tmp_path: Path) -> None:
             "destination": str(tmp_path),
             "scenes": 0,
             "tbatch": 1,
-            "overwrite": True,
         },
     )
 
@@ -71,7 +70,7 @@ def test_run_jobs_from_list(tmp_path: Path) -> None:
 def test_run_jobs_from_directory_three_levels(
     tmp_path: Path, max_depth: Optional[int], expected_count: int
 ) -> None:
-    # Arrange
+    # Arrange: build directory tree with sample files at each level
     samples = [
         LOCAL_RESOURCES_DIR / "s_1_t_1_c_1_z_1.ome.tiff",
         LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.ome.tiff",
@@ -92,15 +91,20 @@ def test_run_jobs_from_directory_three_levels(
             "destination": str(tmp_path),
             "scenes": 0,
             "tbatch": 1,
-            "overwrite": True,
         },
     )
     if max_depth is None:
         jobs = bc.from_directory(tmp_path, pattern="*.ome.tiff")
     else:
         jobs = bc.from_directory(tmp_path, max_depth=max_depth, pattern="*.ome.tiff")
-    # Run conversions
-    bc.run_jobs(jobs)
+
+    # Run each job individually, cleaning up output before each run
+    for job in jobs:
+        src_file = Path(job.get("src") or job.get("source") or job["input"])
+        out_zarr = tmp_path / f"{src_file.stem}.ome.zarr"
+        if out_zarr.exists():
+            shutil.rmtree(out_zarr)
+        bc.run_jobs([job])
 
     # Assert
     for src in samples:
@@ -127,7 +131,7 @@ def test_run_jobs_from_csv(tmp_path: Path) -> None:
     tiff1 = LOCAL_RESOURCES_DIR / "s_1_t_1_c_1_z_1.ome.tiff"
     tiff2 = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.ome.tiff"
     csv_path = tmp_path / "jobs.csv"
-    fieldnames = ["source", "destination", "scenes", "tbatch", "overwrite"]
+    fieldnames = ["source", "destination", "scenes", "tbatch"]
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -138,7 +142,6 @@ def test_run_jobs_from_csv(tmp_path: Path) -> None:
                     "destination": str(tmp_path / "out_csv"),
                     "scenes": "0",
                     "tbatch": "1",
-                    "overwrite": "true",
                 }
             )
 

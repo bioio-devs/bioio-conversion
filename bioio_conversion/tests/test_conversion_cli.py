@@ -40,7 +40,6 @@ def test_cli_file_to_zarr(
             "ome-zarr",
             "-s",
             str(scene_index),
-            "--overwrite",
         ],
     )
 
@@ -101,7 +100,6 @@ def test_cli_zarr_resolution_levels(
             str(out_dir),
             "-n",
             zarr_name,
-            "--overwrite",
             "--level-scales",
             scales_arg,
         ],
