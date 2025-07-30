@@ -36,8 +36,6 @@ def test_cli_file_to_zarr(
             str(tmp_path),
             "-n",
             out_name,
-            "-f",
-            "ome-zarr",
             "-s",
             str(scene_index),
         ],
