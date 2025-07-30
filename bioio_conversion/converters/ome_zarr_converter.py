@@ -8,6 +8,8 @@ from bioio import BioImage
 from bioio_ome_zarr.writers import OmeZarrWriterV2
 from bioio_ome_zarr.writers.utils import DimTuple, chunk_size_from_memory_target
 
+from ..cluster import Cluster
+
 
 class OmeZarrConverter:
     """
@@ -32,6 +34,7 @@ class OmeZarrConverter:
         memory_target: int = 16 * 1024 * 1024,
         dtype: Optional[Union[str, np.dtype]] = None,
         channel_names: Optional[List[str]] = None,
+        auto_dask_cluster: bool = False,
     ):
         """
         Initialize an OME-Zarr converter with flexible scene selection,
@@ -73,6 +76,10 @@ class OmeZarrConverter:
         channel_names : Optional[List[str]]
             Override channel labels in the metadata; defaults to the
             reader’s `channel_names` or generic IDs.
+        auto_dask_cluster : bool
+            If True, automatically spin up a local Dask cluster with
+            8 workers (using `Cluster(n_workers=8).start()`) before any
+            conversion work begins. Default is False.
 
         Raises
         ------
@@ -87,6 +94,11 @@ class OmeZarrConverter:
         self.name = name or Path(source).stem
         self.tbatch = tbatch
         self.memory_target = memory_target
+
+        # spin up a local Dask cluster with 8 workers
+        if auto_dask_cluster:
+            cluster = Cluster(n_workers=8)
+            cluster.start()
 
         # probe to get all metadata and scenes up front
         bio_probe = BioImage(self.source)

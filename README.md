@@ -64,7 +64,6 @@ conv = OmeZarrConverter(
     destination='zarr_output',
     scenes=-1,        # export every scene
     name='experiment1',   # custom base name
-    overwrite=True,       # remove existing store
     tbatch=2,             # 2 timepoints per write batch
     xy_scale=(0.5, 0.25), # X/Y downsampling levels
     z_scale=(1.0, 0.5),   # Z downsampling levels
@@ -93,10 +92,10 @@ bioio-convert SOURCE -d DESTINATION [options]
 bioio-convert image.tif -d out_dir
 ```
 
-#### Overwrite and custom name
+#### Custom name
 
 ```bash
-bioio-convert sample.czi -d out_dir -n my_run --overwrite
+bioio-convert sample.czi -d out_dir -n my_run
 ```
 
 #### Export all scenes
@@ -141,20 +140,12 @@ bioio-convert image.tif -d out_dir --dtype uint16 --memory-target 33554432
 bioio-convert image_with_channels.czi -d out_dir --channel-names DAPI,GFP,TRITC
 ```
 
-#### Specify converter format
-
-```bash
-bioio-convert image.tif -d out_dir --format ome-zarr
-```
-
 **Key options:**
 
 * `source` (positional): input image path
 * `-d`, `--destination`: output directory for `.ome.zarr`
 * `-n`, `--name`: base name (defaults to source stem)
-* `-f`, `--format`: converter to use (`ome-zarr`)
 * `-s`, `--scenes`: scene(s) to export (`all`, `0`, `0,2`)
-* `--overwrite`/`--no-overwrite`: toggle overwrite
 * `--tbatch`: timepoints per write batch
 * `--level-scales`: TCZYX tuples (e.g. `1,1,1,1,1;1,1,1,0.5,0.5`)
 * `--xy-scale`: XY downsampling (e.g. `0.5,0.25`)
@@ -162,6 +153,7 @@ bioio-convert image.tif -d out_dir --format ome-zarr
 * `--memory-target`: bytes per chunk (default 16777216)
 * `--dtype`: output dtype override (e.g. `uint16`)
 * `--channel-names`: comma-separated labels
+* `--auto-dask-cluster`: automatically spin up a local Dask cluster with 8 workers before conversion (default: off)
 
 ---
 
@@ -177,7 +169,6 @@ bc = BatchConverter(
     default_opts={
         'destination': 'batch_out',
         'tbatch': 4,
-        'overwrite': True
     }
 )
 jobs = bc.from_csv('jobs.csv')  # parse CSV into job dicts
@@ -191,7 +182,6 @@ from bioio_conversion import BatchConverter
 
 bc = BatchConverter(default_opts={
     'destination': 'dir_out',
-    'overwrite': False
 })
 jobs = bc.from_directory(
     '/data/images',
@@ -235,7 +225,6 @@ bioio-batch-convert \
   --csv-file jobs.csv \
   --destination batch_out \
   --tbatch 4 \
-  --overwrite \
   --dtype uint16 \
   --xy-scale 0.5,0.25
 ```

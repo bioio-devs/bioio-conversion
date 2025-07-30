@@ -3,26 +3,22 @@ import signal
 from types import FrameType
 
 import ngff_zarr
+import psutil
 from dask.distributed import Client, LocalCluster
 
 
 class Cluster:
     """
-    A custom Dask cluster helper that starts a LocalCluster
-    with auto-shutdown on process exit or signals.
+    A custom Dask cluster class that allows for the creation and management of a Dask
+    cluster.
     """
 
     def __init__(self, n_workers: int = 4) -> None:
         self._n_workers = n_workers
         self._worker_memory = ngff_zarr.config.memory_target // self._n_workers
-        try:
-            import psutil
-
-            cpu_count = psutil.cpu_count(logical=False) or n_workers
-            self._n_workers = max(1, cpu_count // 2)
-            self._worker_memory = ngff_zarr.config.memory_target // self._n_workers
-        except ImportError:
-            pass
+        cpu_count = psutil.cpu_count(logical=False) or n_workers
+        self._n_workers = max(1, cpu_count // 2)
+        self._worker_memory = ngff_zarr.config.memory_target // self._n_workers
 
     def start(self) -> Client:
         """
@@ -42,8 +38,9 @@ class Cluster:
             client.shutdown()
 
         atexit.register(client.shutdown)
+        signal.signal(signal.SIGTERM, _shutdown)
+        signal.signal(signal.SIGINT, _shutdown)
 
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            signal.signal(sig, _shutdown)
-
-        return client
+        if client is not None:
+            print(client)
+            print(client.dashboard_link)

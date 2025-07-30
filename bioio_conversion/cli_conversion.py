@@ -100,6 +100,12 @@ def parse_channel_names(text: str) -> List[str]:
     default=None,
     help="Comma-separated list of channel labels to use in metadata",
 )
+@click.option(
+    "--auto-dask-cluster",
+    is_flag=True,
+    default=False,
+    help="Create Dask cluster with 8 workers for Dask computation.",
+)
 def main(
     source: str,
     destination: str,
@@ -112,6 +118,7 @@ def main(
     memory_target: Optional[int],
     dtype: Optional[str],
     channel_names: Optional[str],
+    auto_dask_cluster: bool,
 ) -> None:
     """
     Convert SOURCE to OME-Zarr stores under DESTINATION.
@@ -137,6 +144,8 @@ def main(
         init_opts["dtype"] = dtype
     if channel_names is not None:
         init_opts["channel_names"] = parse_channel_names(channel_names)
+    if auto_dask_cluster:
+        init_opts["auto_dask_cluster"] = True
 
     conv = OmeZarrConverter(source=source, **init_opts)
     conv.convert()
