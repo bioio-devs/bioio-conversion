@@ -257,5 +257,6 @@ bioio-batch-convert \
 
 ## License & Issues
 
-MIT License.
+BSD 3-Clause [https://bioio-devs.github.io/bioio-conversion/LICENSE](LICENSE)
+
 Report bugs at: [https://github.com/bioio-devs/bioio-conversion/issues](https://github.com/bioio-devs/bioio-conversion/issues)
