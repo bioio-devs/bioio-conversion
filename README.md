@@ -40,7 +40,7 @@ from bioio_conversion.converters import OmeZarrConverter, BatchConverter
 
 ---
 
-## Python API: OmeZarrConverter
+### Example: OmeZarrConverter
 
 ### Minimal usage
 
