@@ -50,10 +50,3 @@ tag-for-release version:
 # push tags for release
 release:
 	git push --follow-tags
-
-# update from cookiecutter template
-update-from-cookiecutter:
-	pip install cookiecutter
-	cookiecutter gh:evamaxfield/cookiecutter-py-package \
-	  --config-file .cookiecutter.yaml --no-input \
-	  --overwrite-if-exists --output-dir ..
