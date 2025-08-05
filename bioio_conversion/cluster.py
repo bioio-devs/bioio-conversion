@@ -14,8 +14,6 @@ class Cluster:
     """
 
     def __init__(self, n_workers: int = 4) -> None:
-        self._n_workers = n_workers
-        self._worker_memory = ngff_zarr.config.memory_target // self._n_workers
         cpu_count = psutil.cpu_count(logical=False) or n_workers
         self._n_workers = max(1, cpu_count // 2)
         self._worker_memory = ngff_zarr.config.memory_target // self._n_workers

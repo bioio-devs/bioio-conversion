@@ -1,7 +1,7 @@
 import re
 import warnings
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 from bioio import BioImage
@@ -173,12 +173,13 @@ class OmeZarrConverter:
         return shapes
 
     @staticmethod
-    def get_zarr_chunk_dims(
+    def get_chunk_shapes_for_memory_limit(
         level_shapes: List[DimTuple],
+        dtype: str | np.dtype[Any],
         memory_target: int,
     ) -> List[DimTuple]:
         raw = [
-            chunk_size_from_memory_target(shape, np.dtype("uint8"), memory_target)
+            chunk_size_from_memory_target(shape, dtype, memory_target)
             for shape in level_shapes
         ]
         return [tuple(max(1, d) for d in dims) for dims in raw]
@@ -242,7 +243,9 @@ class OmeZarrConverter:
 
             # compute shapes & chunks
             lvl_shapes = self.get_level_shapes(shape5, self.level_scales, self.channels)
-            chunk_dims = self.get_zarr_chunk_dims(lvl_shapes, self.memory_target)
+            chunk_dims = self.get_chunk_shapes_for_memory_limit(
+                lvl_shapes, self.dtype, self.memory_target
+            )
 
             # write
             writer = OmeZarrWriterV2()
