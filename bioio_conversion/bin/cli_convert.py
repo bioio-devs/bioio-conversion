@@ -69,15 +69,12 @@ class ScenesType(click.ParamType):
     def convert(
         self, value: Any, param: Parameter, ctx: Context
     ) -> Union[int, List[int]]:
-        text = str(value).lower()
         try:
-            if text == "all":
-                return -1
-            parts = [int(x) for x in text.split(",")]
+            parts = [int(x) for x in str(value).split(",")]
         except Exception:
             self.fail(
                 f"{value!r} is not a valid --scenes value. "
-                "Use 'all', a single index, or comma-separated list.",
+                "Use a single index or comma-separated list.",
                 param,
                 ctx,
             )
@@ -115,7 +112,7 @@ class ChannelNamesType(click.ParamType):
     "-s",
     type=ScenesType(),
     default=None,
-    help="Which scene(s) to export: 'all', a single index, or comma-list",
+    help=("Which scene(s) to export: a single index or list (default: all scenes)"),
 )
 @click.option(
     "--tbatch",

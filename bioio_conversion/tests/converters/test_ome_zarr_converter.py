@@ -24,7 +24,7 @@ from ..conftest import LOCAL_RESOURCES_DIR
         # multi‐scene TIFF → scenes 0 and 1
         ("s_3_t_1_c_3_z_5.ome.tiff", [0, 1], [0, 1]),
         # multi‐scene TIFF → all scenes
-        ("s_3_t_1_c_3_z_5.ome.tiff", -1, [0, 1, 2]),
+        ("s_3_t_1_c_3_z_5.ome.tiff", None, [0, 1, 2]),
     ],
     ids=["1scene-idx0", "3scene-idx01-specific", "3scene-idx2", "3scene-all"],
 )
@@ -113,6 +113,7 @@ def test_zarr_resolution_levels(
         name=zarr_name,
         tbatch=1,
         level_scales=level_scales,
+        scenes=0,
     )
     conv.convert()
 
@@ -160,6 +161,7 @@ def test_zarr_per_axis_scales(
         tbatch=1,
         xy_scale=xy_scale,
         z_scale=z_scale,
+        scenes=0,
     )
     conv.convert()
 

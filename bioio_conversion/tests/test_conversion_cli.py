@@ -100,6 +100,8 @@ def test_cli_zarr_resolution_levels(
             zarr_name,
             "--level-scales",
             scales_arg,
+            "--scenes",
+            "0",
         ],
     )
 

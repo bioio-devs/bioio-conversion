@@ -25,7 +25,7 @@ class OmeZarrConverter:
         *,
         source: str,
         destination: str,
-        scenes: Union[int, List[int]] = 0,
+        scenes: Optional[Union[int, List[int]]] = None,
         name: Optional[str] = None,
         tbatch: int = 1,
         level_scales: Optional[List[DimTuple]] = None,
@@ -46,11 +46,11 @@ class OmeZarrConverter:
             Path to the input image (any format supported by BioImage).
         destination : str
             Directory in which to write `.ome.zarr` outputs.
-        scenes : Union[int, List[int]]
+        scenes : Optional[Union[int, List[int]]]
             Which scene(s) to export:
-              - non-negative int → single scene index
-              - list of ints     → those specific scene indices
-              - -1                → all available scenes
+            - None             → export all available scenes
+            - non-negative int → single scene index
+            - list of ints     → those specific scene indices
         name : Optional[str]
             Base name for output files (defaults to source stem). When
             exporting multiple scenes, each file is suffixed with the
@@ -106,20 +106,21 @@ class OmeZarrConverter:
         total = len(self.scene_names)
 
         # Scene selection logic
-        if isinstance(scenes, int):
-            if scenes < 0:
-                self.scenes = list(range(total))
-            else:
-                if scenes >= total:
-                    raise IndexError(
-                        f"Scene index {scenes} ≥ number of scenes ({total})"
-                    )
-                self.scenes = [scenes]
-        else:
-            invalid = [s for s in scenes if s < 0 or s >= total]
+        if scenes is None:
+            self.scenes = list(range(total))
+        elif isinstance(scenes, int):
+            if scenes >= total:
+                raise IndexError(f"Scene index {scenes} ≥ number of scenes ({total})")
+            self.scenes = [scenes]
+        elif isinstance(scenes, list):
+            invalid = [
+                s for s in scenes if not isinstance(s, int) or s < 0 or s >= total
+            ]
             if invalid:
                 raise IndexError(f"Scene indices out of range: {invalid}")
             self.scenes = scenes.copy()
+        else:
+            raise TypeError("`scenes` must be None, an int, or a list of ints.")
 
         # dtype & channel names come from scene 0 by default
         bio_probe.set_scene(0)
