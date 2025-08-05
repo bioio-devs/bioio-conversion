@@ -36,7 +36,7 @@ Converters are Python classes that implement a standard interface for transformi
 * **OmeZarrConverter**  
   - **Purpose**: Convert any BioImage-supported input (TIFF, CZI, ND2, etc.) into an OME-Zarr v2 store.  
   - **Features**:  
-    - Multi-scene export (`scenes=0`, `scenes=-1` for all, or a list)  
+    - Multi-scene export (`scenes=0`, or a list, None = all scenes)  
     - Multi-resolution pyramids via `xy_scale`, `z_scale`, or explicit `level_scales`  
     - Chunk-size tuning with `memory_target`  
     - Metadata generation (physical scales, units, channel names, colors)  
@@ -82,7 +82,7 @@ from bioio_conversion.converters import OmeZarrConverter
 conv = OmeZarrConverter(
     source='multi_scene.czi',
     destination='zarr_output',
-    scenes=-1,        # export every scene
+    scenes=None,        # export every scene (default)
     name='experiment1',   # custom base name
     tbatch=2,             # 2 timepoints per write batch
     xy_scale=(0.5, 0.25), # X/Y downsampling levels
@@ -157,7 +157,7 @@ bioio-convert SOURCE -d DESTINATION [options]
 * `source` (positional): input image path  
 * `-d`, `--destination`: output directory for `.ome.zarr`  
 * `-n`, `--name`: base name (defaults to source stem)  
-* `-s`, `--scenes`: scene(s) to export (`0` by default; use `all` or comma-separated list)  
+* `-s`, `--scenes`: scene(s) to export (`0` by default; comma-separated list for selection; None = all scenes)  
 * `--tbatch`: timepoints per write batch (default: `1`)  
 * `--level-scales`: TCZYX tuples (e.g. `1,1,1,1,1;1,1,1,0.5,0.5`; default: full resolution only)  
 * `--xy-scale`: XY downsampling (e.g. `0.5,0.25`; default: no downsampling)  
@@ -184,7 +184,7 @@ bioio-convert sample.czi -d out_dir -n my_run
 #### Export all scenes
 
 ```bash
-bioio-convert multi_scene.ome.tiff -d zarr_out --scene "all"
+bioio-convert multi_scene.ome.tiff -d zarr_out
 ```
 
 #### Export specific scenes
@@ -255,7 +255,6 @@ bioio-batch-convert \
   --depth 2 \
   --pattern '*.czi' \
   --destination output_zarr \
-  --scenes all \
   --level-scales "1,1,1,1,1;1,1,1,0.5,0.5"
 ```
 
