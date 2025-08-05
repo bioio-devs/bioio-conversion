@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import click
 
-from .converters.batch_converter import BatchConverter
+from ..converters.batch_converter import BatchConverter
 
 
 def parse_extra_opts(extra_opts: Tuple[str, ...]) -> Dict[str, Any]:

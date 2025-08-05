@@ -7,7 +7,7 @@ from bioio import BioImage
 from click.testing import CliRunner
 from numpy.testing import assert_array_equal
 
-from bioio_conversion.cli_batch_conversion import main
+from bioio_conversion.bin.cli_batch_convert import main
 
 from .conftest import LOCAL_RESOURCES_DIR
 

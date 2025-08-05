@@ -4,7 +4,7 @@ import click
 from bioio_ome_zarr.writers import DimTuple
 from click import Context, Parameter
 
-from .converters.ome_zarr_converter import OmeZarrConverter
+from ..converters.ome_zarr_converter import OmeZarrConverter
 
 
 # ──────────────────────────────────────────────────────────────────────────────

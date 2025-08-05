@@ -6,7 +6,7 @@ from bioio_ome_zarr import Reader as ZarrReader
 from click.testing import CliRunner
 from numpy.testing import assert_array_equal
 
-from bioio_conversion.cli_conversion import main
+from bioio_conversion.bin.cli_convert import main
 
 from .conftest import LOCAL_RESOURCES_DIR
 
