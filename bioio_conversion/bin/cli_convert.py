@@ -141,7 +141,7 @@ class ChannelNamesType(click.ParamType):
     help="Comma-separated Z downsampling factors, e.g. '1.0,0.5'",
 )
 @click.option(
-    "--memory-target",
+    "--chunk-memory-target",
     type=int,
     default=None,
     help="Approximate bytes per Zarr chunk",
