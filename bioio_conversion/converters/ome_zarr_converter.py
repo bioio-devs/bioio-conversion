@@ -31,7 +31,7 @@ class OmeZarrConverter:
         level_scales: Optional[List[DimTuple]] = None,
         xy_scale: Optional[Tuple[float, ...]] = None,
         z_scale: Optional[Tuple[float, ...]] = None,
-        memory_target: int = 16 * 1024 * 1024,
+        chunk_memory_target: int = 16 * 1024 * 1024,
         dtype: Optional[Union[str, np.dtype]] = None,
         channel_names: Optional[List[str]] = None,
         auto_dask_cluster: bool = False,
@@ -67,9 +67,10 @@ class OmeZarrConverter:
             Downsampling factors for Z, relative to the original. Must
             match `xy_scale` length if provided. Can be used alone or
             together with `xy_scale`.
-        memory_target : int
-            Approximate maximum bytes per Zarr chunk. Passed to
-            `chunk_size_from_memory_target` (default 16 MB).
+        chunk_memory_target : int
+            Size of Zarr chunk in bytes, Passed to
+            `chunk_size_from_chunk_memory_target` (default 16 MB)
+            or 16 * 1024 * 1024 = 16,777,216 (bytes)
         dtype : Optional[Union[str, np.dtype]]
             Override output data type (e.g. `"uint16"`); defaults to
             the reader’s dtype.
@@ -93,7 +94,7 @@ class OmeZarrConverter:
         self.destination = destination
         self.name = name or Path(source).stem
         self.tbatch = tbatch
-        self.memory_target = memory_target
+        self.chunk_memory_target = chunk_memory_target
 
         # spin up a local Dask cluster with 8 workers
         if auto_dask_cluster:
@@ -177,10 +178,10 @@ class OmeZarrConverter:
     def get_chunk_shapes_for_memory_limit(
         level_shapes: List[DimTuple],
         dtype: str | np.dtype[Any],
-        memory_target: int,
+        chunk_memory_target: int,
     ) -> List[DimTuple]:
         raw = [
-            chunk_size_from_memory_target(shape, dtype, memory_target)
+            chunk_size_from_memory_target(shape, dtype, chunk_memory_target)
             for shape in level_shapes
         ]
         return [tuple(max(1, d) for d in dims) for dims in raw]
@@ -245,7 +246,7 @@ class OmeZarrConverter:
             # compute shapes & chunks
             lvl_shapes = self.get_level_shapes(shape5, self.level_scales, self.channels)
             chunk_dims = self.get_chunk_shapes_for_memory_limit(
-                lvl_shapes, self.dtype, self.memory_target
+                lvl_shapes, self.dtype, self.chunk_memory_target
             )
 
             # write

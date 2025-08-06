@@ -38,7 +38,7 @@ Converters are Python classes that implement a standard interface for transformi
   - **Features**:  
     - Multi-scene export (`scenes=0`, or a list, None = all scenes)  
     - Multi-resolution pyramids via `xy_scale`, `z_scale`, or explicit `level_scales`  
-    - Chunk-size tuning with `memory_target`  
+    - Chunk-size tuning with `chunk_memory_target`  
     - Metadata generation (physical scales, units, channel names, colors)  
   - **Import path**:  
     ```python
@@ -87,7 +87,7 @@ conv = OmeZarrConverter(
     tbatch=2,             # 2 timepoints per write batch
     xy_scale=(0.5, 0.25), # X/Y downsampling levels
     z_scale=(1.0, 0.5),   # Z downsampling levels
-    memory_target=32 * 1024 * 1024,  # 32 MB chunk target
+    chunk_memory_target=32 * 1024 * 1024,  # 32 MB chunk target
     dtype='uint16',       # output data type override
     channel_names=['DAPI', 'GFP']    # custom labels
 )
@@ -96,7 +96,7 @@ conv.convert()
 
 ### CSV-driven batch conversion
 
-The CSV file should have a header row that names the job parameters. At minimum, include a `source` column (path to each input image). You may also include per-job overrides for any converter option (e.g. `destination`, `scenes`, `tbatch`, `xy_scale`, `z_scale`, `memory_target`, `dtype`, `channel_names`, etc.). Values in each row will be merged with the `default_opts` you passed to `BatchConverter`.
+The CSV file should have a header row that names the job parameters. At minimum, include a `source` column (path to each input image). You may also include per-job overrides for any converter option (e.g. `destination`, `scenes`, `tbatch`, `xy_scale`, `z_scale`, `chunk_memory_target`, `dtype`, `channel_names`, etc.). Values in each row will be merged with the `default_opts` you passed to `BatchConverter`.
 
 ```python
 from bioio_conversion import BatchConverter

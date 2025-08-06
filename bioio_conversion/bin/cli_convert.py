@@ -18,7 +18,7 @@ class OmeZarrInitOptions(TypedDict, total=False):
     level_scales: List[DimTuple]
     xy_scale: Tuple[float, ...]
     z_scale: Tuple[float, ...]
-    memory_target: int
+    chunk_memory_target: int
     dtype: str
     channel_names: List[str]
     auto_dask_cluster: bool
@@ -172,7 +172,7 @@ def main(
     level_scales: Optional[List[DimTuple]],
     xy_scale: Optional[Tuple[float, ...]],
     z_scale: Optional[Tuple[float, ...]],
-    memory_target: Optional[int],
+    chunk_memory_target: Optional[int],
     dtype: Optional[str],
     channel_names: Optional[List[str]],
     auto_dask_cluster: bool,
@@ -194,8 +194,8 @@ def main(
         init_opts["xy_scale"] = xy_scale
     if z_scale is not None:
         init_opts["z_scale"] = z_scale
-    if memory_target is not None:
-        init_opts["memory_target"] = memory_target
+    if chunk_memory_target is not None:
+        init_opts["chunk_memory_target"] = chunk_memory_target
     if dtype is not None:
         init_opts["dtype"] = dtype
     if channel_names is not None:
