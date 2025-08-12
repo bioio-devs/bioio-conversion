@@ -1,0 +1,275 @@
+import re
+import warnings
+from pathlib import Path
+from typing import Any, List, Optional, Tuple, Union
+
+import numpy as np
+from bioio import BioImage
+from bioio_ome_zarr.writers import OmeZarrWriterV2
+from bioio_ome_zarr.writers.utils import DimTuple, chunk_size_from_memory_target
+
+from ..cluster import Cluster
+
+
+class OmeZarrConverter:
+    """
+    OmeZarrConverter handles conversion of any BioImage‐supported format
+    (TIFF, CZI, etc.) into OME-Zarr v2 stores. Supports exporting one,
+    many, or all scenes from a multi-scene file, with configurable
+    multi-resolution pyramids (full TCZYX scales or per-axis XY/Z
+    factors) and chunk-size memory targeting.
+    """
+
+    def __init__(
+        self,
+        *,
+        source: str,
+        destination: str,
+        scenes: Optional[Union[int, List[int]]] = None,
+        name: Optional[str] = None,
+        tbatch: int = 1,
+        level_scales: Optional[List[DimTuple]] = None,
+        xy_scale: Optional[Tuple[float, ...]] = None,
+        z_scale: Optional[Tuple[float, ...]] = None,
+        chunk_memory_target: int = 16 * 1024 * 1024,
+        dtype: Optional[Union[str, np.dtype]] = None,
+        channel_names: Optional[List[str]] = None,
+        auto_dask_cluster: bool = False,
+    ):
+        """
+        Initialize an OME-Zarr converter with flexible scene selection,
+        pyramid construction, and chunk-sizing.
+
+        Parameters
+        ----------
+        source : str
+            Path to the input image (any format supported by BioImage).
+        destination : str
+            Directory in which to write `.ome.zarr` outputs.
+        scenes : Optional[Union[int, List[int]]]
+            Which scene(s) to export:
+            - None             → export all available scenes
+            - non-negative int → single scene index
+            - list of ints     → those specific scene indices
+        name : Optional[str]
+            Base name for output files (defaults to source stem). When
+            exporting multiple scenes, each file is suffixed with the
+            scene’s name.
+        tbatch : int
+            Number of timepoints per batch when streaming writes.
+        level_scales : Optional[List[DimTuple]]
+            Explicit list of (t, c, z, y, x) scale tuples—one per
+            resolution level. Mutually exclusive with `xy_scale`/`z_scale`.
+        xy_scale : Optional[Tuple[float, ...]]
+            Downsampling factors for X and Y, relative to the original.
+            E.g. `(0.5, 0.25)` → levels at 100%, 50%, 25% in X/Y.
+        z_scale : Optional[Tuple[float, ...]]
+            Downsampling factors for Z, relative to the original. Must
+            match `xy_scale` length if provided. Can be used alone or
+            together with `xy_scale`.
+        chunk_memory_target : int
+            Size of Zarr chunk in bytes, Passed to
+            `chunk_size_from_chunk_memory_target` (default 16 MB)
+            or 16 * 1024 * 1024 = 16,777,216 (bytes)
+        dtype : Optional[Union[str, np.dtype]]
+            Override output data type (e.g. `"uint16"`); defaults to
+            the reader’s dtype.
+        channel_names : Optional[List[str]]
+            Override channel labels in the metadata; defaults to the
+            reader’s `channel_names` or generic IDs.
+        auto_dask_cluster : bool
+            If True, automatically spin up a local Dask cluster with
+            8 workers (using `Cluster(n_workers=8).start()`) before any
+            conversion work begins. Default is False.
+
+        Raises
+        ------
+        ValueError
+            If `level_scales` is used together with `xy_scale`/`z_scale`,
+            or if `xy_scale` and `z_scale` lengths mismatch.
+        IndexError
+            If any requested scene index is out of range.
+        """
+        self.source = source
+        self.destination = destination
+        self.name = name or Path(source).stem
+        self.tbatch = tbatch
+        self.chunk_memory_target = chunk_memory_target
+
+        # spin up a local Dask cluster with 8 workers
+        if auto_dask_cluster:
+            cluster = Cluster(n_workers=8)
+            cluster.start()
+
+        # probe to get all metadata and scenes up front
+        bio_probe = BioImage(self.source)
+        self.scene_names = bio_probe.scenes
+        total = len(self.scene_names)
+
+        # Scene selection logic
+        if scenes is None:
+            self.scenes = list(range(total))
+        elif isinstance(scenes, int):
+            if scenes >= total:
+                raise IndexError(f"Scene index {scenes} ≥ number of scenes ({total})")
+            self.scenes = [scenes]
+        elif isinstance(scenes, list):
+            invalid = [
+                s for s in scenes if not isinstance(s, int) or s < 0 or s >= total
+            ]
+            if invalid:
+                raise IndexError(f"Scene indices out of range: {invalid}")
+            self.scenes = scenes.copy()
+        else:
+            raise TypeError("`scenes` must be None, an int, or a list of ints.")
+
+        # dtype & channel names come from scene 0 by default
+        bio_probe.set_scene(0)
+        self.dtype = np.dtype(dtype) if dtype is not None else bio_probe.dtype
+        dims0 = bio_probe.dims
+        self.channels = list(range(dims0.C))
+        self.channel_names = (
+            channel_names
+            if channel_names is not None
+            else (bio_probe.channel_names or [f"Channel:{i}" for i in self.channels])
+        )
+
+        # Build level_scales
+        if level_scales is not None:
+            if xy_scale or z_scale:
+                raise ValueError("Cannot mix `level_scales` with `xy_scale`/`z_scale`.")
+            self.level_scales = level_scales
+        else:
+            # fill per-axis tuples
+            if xy_scale and not z_scale:
+                z_scale = tuple(1.0 for _ in xy_scale)
+            if z_scale and not xy_scale:
+                xy_scale = tuple(1.0 for _ in z_scale)
+            if xy_scale and z_scale and len(xy_scale) != len(z_scale):
+                raise ValueError("`xy_scale` and `z_scale` must match length.")
+            scales: List[DimTuple] = [(1, 1, 1, 1, 1)]
+            if xy_scale and z_scale:
+                for xy, z in zip(xy_scale, z_scale):
+                    scales.append((1.0, 1.0, float(z), float(xy), float(xy)))
+            self.level_scales = scales
+
+    @staticmethod
+    def get_level_shapes(
+        source_shape: DimTuple,
+        level_scales: List[DimTuple],
+        channels: Optional[List[int]] = None,
+    ) -> List[DimTuple]:
+        t0, c0, z0, y0, x0 = source_shape
+        c = len(channels) if channels is not None else c0
+        shapes = []
+        for st, _, sz, sy, sx in level_scales:
+            shapes.append(
+                (
+                    int(round(t0 * st)),
+                    c,
+                    int(round(z0 * sz)),
+                    int(round(y0 * sy)),
+                    int(round(x0 * sx)),
+                )
+            )
+        return shapes
+
+    @staticmethod
+    def get_chunk_shapes_for_memory_limit(
+        level_shapes: List[DimTuple],
+        dtype: str | np.dtype[Any],
+        chunk_memory_target: int,
+    ) -> List[DimTuple]:
+        raw = [
+            chunk_size_from_memory_target(shape, dtype, chunk_memory_target)
+            for shape in level_shapes
+        ]
+        return [tuple(max(1, d) for d in dims) for dims in raw]
+
+    def convert(self) -> None:
+        """
+        Loop over each scene in self.scenes, writing
+        an independent .ome.zarr file named:
+            {self.name}_{scene_name}.ome.zarr
+        """
+
+        # This is really only for windows
+        if len(self.scenes) > 1:
+            invalid = []
+            for i in self.scenes:
+                name = self.scene_names[i]
+                if re.search(r'[<>:"/\\|?*]', name):
+                    invalid.append(name)
+            if invalid:
+                warnings.warn(
+                    f"Scene names {invalid} contain invalid chars and will be "
+                    "sanitized for the output file name.",
+                    UserWarning,
+                )
+
+        for idx in self.scenes:  # This could be parallelized
+            bio = BioImage(self.source)
+            bio.set_scene(idx)
+            dims = bio.dims
+            shape5 = (dims.T, dims.C, dims.Z, dims.Y, dims.X)
+
+            # physical scales (fallback to 1.0)
+            scale = bio.scale
+            phys = {
+                "t": scale.T or 1.0,
+                "z": scale.Z or 1.0,
+                "y": scale.Y or 1.0,
+                "x": scale.X or 1.0,
+                "c": 1.0,
+            }
+            units = {
+                "t": "second",
+                "z": "micrometer",
+                "y": "micrometer",
+                "x": "micrometer",
+            }
+
+            # determine output name: append scene name if >1
+            scene_name = self.scene_names[idx]
+
+            # remove invalid chars
+            out_name = re.sub(
+                r'[<>:"/\\|?*]',
+                "_",
+                (self.name if len(self.scenes) == 1 else f"{self.name}_{scene_name}"),
+            )
+            full_path = Path(self.destination) / f"{out_name}.ome.zarr"
+
+            if full_path.exists():
+                raise FileExistsError(f"{full_path} already exists.")
+
+            # compute shapes & chunks
+            lvl_shapes = self.get_level_shapes(shape5, self.level_scales, self.channels)
+            chunk_dims = self.get_chunk_shapes_for_memory_limit(
+                lvl_shapes, self.dtype, self.chunk_memory_target
+            )
+
+            # write
+            writer = OmeZarrWriterV2()
+            writer.init_store(
+                output_path=str(full_path),
+                shapes=lvl_shapes,
+                chunk_sizes=chunk_dims,
+                dtype=self.dtype,
+            )
+            writer.write_t_batches(
+                bio.reader,
+                channels=self.channels,
+                tbatch=self.tbatch,
+                debug=False,
+            )
+
+            # metadata
+            meta = writer.generate_metadata(
+                image_name=out_name,
+                channel_names=self.channel_names,
+                physical_dims=phys,
+                physical_units=units,
+                channel_colors=[0xFFFFFF] * dims.C,
+            )
+            writer.write_metadata(meta)
