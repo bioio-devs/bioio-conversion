@@ -1,8 +1,8 @@
 import pathlib
 
+import numpy as np
 import pytest
 from bioio import BioImage
-from bioio_ome_zarr import Reader as ZarrReader
 from click.testing import CliRunner
 from numpy.testing import assert_array_equal
 
@@ -108,13 +108,17 @@ def test_cli_zarr_resolution_levels(
     # Assert
     assert result.exit_code == 0, result.output
 
-    reader = ZarrReader(out_dir / f"{zarr_name}.ome.zarr")
-    assert tuple(reader.resolution_levels) == expected_levels
+    bio = BioImage(str(out_dir / f"{zarr_name}.ome.zarr"))
+    bio.set_scene(0)
 
-    base_shape = reader.resolution_level_dims[0]
+    # BioImage should expose the same multires info as before
+    assert tuple(bio.resolution_levels) == expected_levels
+
+    base_shape = bio.resolution_level_dims[0]
+    # Universal writer uses floor-and-clamp when deriving level shapes
     expected_shapes = [
-        tuple(int(round(base_shape[i] * scale[i])) for i in range(5))
+        tuple(max(1, int(np.floor(base_shape[i] * scale[i]))) for i in range(5))
         for scale in level_scales
     ]
-    actual_shapes = [reader.resolution_level_dims[lvl] for lvl in expected_levels]
+    actual_shapes = [bio.resolution_level_dims[lvl] for lvl in expected_levels]
     assert actual_shapes == expected_shapes
