@@ -45,7 +45,7 @@ class ScaleTupleListType(click.ParamType):
         except Exception:
             self.fail(
                 f"{value!r} is not a valid --scale value. "
-                "Expected semicolon-separated tuples like 'a,b,c;d,e,f'",
+                "Expected semicolon-separated tuples like 't,c,z,y,x;...'",
                 param,
                 ctx,
             )
