@@ -44,7 +44,6 @@ class OmeZarrConverter:
         axes_types: Optional[List[str]] = None,
         axes_units: Optional[List[Optional[str]]] = None,
         physical_pixel_size: Optional[List[float]] = None,
-        level_scales: Optional[List[Tuple[float, ...]]] = None,
         xy_scale: Optional[Tuple[float, ...]] = None,
         z_scale: Optional[Tuple[float, ...]] = None,
         num_levels: Optional[int] = None,
@@ -105,10 +104,6 @@ class OmeZarrConverter:
         physical_pixel_size : Optional[List[float]]
             Physical scale at level 0 per axis. If omitted, values are derived from
             ``BioImage.scale`` for present axes.
-        level_scales : Optional[List[Tuple[float, ...]]]
-            Convenience: explicit per-level scale vectors for the *present* axes.
-            Passed through as-is (including an optional leading identity row).
-            Ignored when ``scale`` is provided.
         xy_scale : Optional[Tuple[float, ...]]
             Convenience: XY downsampling factors per additional level (e.g.,
             ``(0.5, 0.25)`` for 2 extra levels at 50% and 25% in X/Y). Applies only
@@ -175,7 +170,6 @@ class OmeZarrConverter:
         self._writer_physical_pixel_size = physical_pixel_size
 
         # Helpers
-        self._helper_level_scales = level_scales
         self._helper_xy_scale = xy_scale
         self._helper_z_scale = z_scale
         self._helper_num_levels = num_levels
@@ -219,12 +213,6 @@ class OmeZarrConverter:
     def _build_scales_from_helpers(
         self, axis_names: List[str]
     ) -> Optional[Tuple[Tuple[float, ...], ...]]:
-        # explicit per-level vectors
-        if self._helper_level_scales is not None:
-            return tuple(
-                tuple(float(x) for x in vec) for vec in self._helper_level_scales
-            )
-
         # xy/z lists
         if self._helper_xy_scale is not None or self._helper_z_scale is not None:
             xs_in: Tuple[float, ...] = self._helper_xy_scale or ()

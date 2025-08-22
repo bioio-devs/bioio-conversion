@@ -15,7 +15,7 @@ class OmeZarrInitOptions(TypedDict, total=False):
     name: str
     scenes: Union[int, List[int]]
     tbatch: int
-    level_scales: List[Tuple[float, ...]]
+    scale: Tuple[Tuple[float, ...], ...]
     xy_scale: Tuple[float, ...]
     z_scale: Tuple[float, ...]
     num_levels: int
@@ -31,8 +31,8 @@ class OmeZarrInitOptions(TypedDict, total=False):
 # ──────────────────────────────────────────────────────────────────────────────
 # ParamTypes
 # ──────────────────────────────────────────────────────────────────────────────
-class DimTupleListType(click.ParamType):
-    name = "level_scales"
+class ScaleTupleListType(click.ParamType):
+    name = "scale"
 
     def convert(
         self, value: Any, param: Parameter, ctx: Context
@@ -44,8 +44,8 @@ class DimTupleListType(click.ParamType):
             ]
         except Exception:
             self.fail(
-                f"{value!r} is not a valid --level-scales value. "
-                "Expected 't,c,z,y,x;...'",
+                f"{value!r} is not a valid --scale value. "
+                "Expected semicolon-separated tuples like 'a,b,c;d,e,f'",
                 param,
                 ctx,
             )
@@ -255,7 +255,16 @@ def _build_channels(
     "--tbatch", type=int, default=None, help="Number of timepoints per write batch"
 )
 # --- scaling ---
-@click.option("--level-scales", type=DimTupleListType(), default=None)
+@click.option(
+    "--scale",
+    type=ScaleTupleListType(),
+    default=None,
+    help=(
+        "Semicolon-separated per-level scale tuples; "
+        "each tuple length must match the native axes. "
+        "Example: '1,1,1,1,1;1,1,1,0.5,0.5'"
+    ),
+)
 @click.option("--xy-scale", type=FloatListType(), default=None)
 @click.option("--z-scale", type=FloatListType(), default=None)
 @click.option("--num-levels", type=int, default=None)
@@ -340,7 +349,7 @@ def main(
     name: Optional[str],
     scenes: Optional[Union[int, List[int]]],
     tbatch: Optional[int],
-    level_scales: Optional[List[Tuple[float, ...]]],
+    scale: Optional[Tuple[Tuple[float, ...]]],
     xy_scale: Optional[Tuple[float, ...]],
     z_scale: Optional[Tuple[float, ...]],
     num_levels: Optional[int],
@@ -372,8 +381,8 @@ def main(
         init_opts["scenes"] = scenes
     if tbatch is not None:
         init_opts["tbatch"] = tbatch
-    if level_scales is not None:
-        init_opts["level_scales"] = level_scales
+    if scale is not None:
+        init_opts["scale"] = scale
     if xy_scale:
         init_opts["xy_scale"] = xy_scale
     if z_scale:

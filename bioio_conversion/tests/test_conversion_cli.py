@@ -1,4 +1,5 @@
 import pathlib
+from typing import Sequence
 
 import numpy as np
 import pytest
@@ -58,7 +59,7 @@ def test_cli_file_to_zarr(
 
 
 @pytest.mark.parametrize(
-    "level_scales, expected_levels",
+    "scale, expected_levels",
     [
         ([(1, 1, 1, 1, 1)], (0,)),
         ([(1, 1, 1, 1, 1), (1, 1, 1, 0.5, 0.5)], (0, 1)),
@@ -79,7 +80,7 @@ def test_cli_file_to_zarr(
 )
 def test_cli_zarr_resolution_levels(
     tmp_path: pathlib.Path,
-    level_scales: list[tuple[float, ...]],
+    scale: Sequence[tuple[float, ...]],
     expected_levels: tuple[int, ...],
 ) -> None:
     # Arrange
@@ -87,7 +88,7 @@ def test_cli_zarr_resolution_levels(
     tiff_path = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.ome.tiff"
     out_dir = tmp_path
     zarr_name = "resolution_test"
-    scales_arg = ";".join(",".join(str(x) for x in lvl) for lvl in level_scales)
+    scales_arg = ";".join(",".join(str(x) for x in lvl) for lvl in scale)
 
     # Act
     result = runner.invoke(
@@ -98,7 +99,7 @@ def test_cli_zarr_resolution_levels(
             str(out_dir),
             "-n",
             zarr_name,
-            "--level-scales",
+            "--scale",
             scales_arg,
             "--scenes",
             "0",
@@ -117,8 +118,8 @@ def test_cli_zarr_resolution_levels(
     base_shape = bio.resolution_level_dims[0]
     # Universal writer uses floor-and-clamp when deriving level shapes
     expected_shapes = [
-        tuple(max(1, int(np.floor(base_shape[i] * scale[i]))) for i in range(5))
-        for scale in level_scales
+        tuple(max(1, int(np.floor(base_shape[i] * sc[i]))) for i in range(5))
+        for sc in scale
     ]
     actual_shapes = [bio.resolution_level_dims[lvl] for lvl in expected_levels]
     assert actual_shapes == expected_shapes

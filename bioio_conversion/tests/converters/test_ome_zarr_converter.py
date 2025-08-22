@@ -80,7 +80,7 @@ def test_file_to_zarr_multi_scene(
 
 
 @pytest.mark.parametrize(
-    "filename, level_scales, expected_levels",
+    "filename, scale, expected_levels",
     [
         # TIFF (TCZYX): XY only → 2 levels
         ("s_3_t_1_c_3_z_5.ome.tiff", [(1, 1, 1, 1, 1), (1, 1, 1, 0.5, 0.5)], (0, 1)),
@@ -118,7 +118,7 @@ def test_file_to_zarr_multi_scene(
 def test_zarr_resolution_levels(
     tmp_path: pathlib.Path,
     filename: str,
-    level_scales: List[Tuple[float, ...]],
+    scale: Tuple[Tuple[float, ...]],
     expected_levels: Tuple[int, ...],
 ) -> None:
     # Arrange
@@ -132,7 +132,7 @@ def test_zarr_resolution_levels(
         destination=str(out_dir),
         name=zarr_name,
         tbatch=1,
-        level_scales=level_scales,
+        scale=scale,
         scenes=0,
     )
     conv.convert()
@@ -144,10 +144,9 @@ def test_zarr_resolution_levels(
     base_shape = reader.resolution_level_dims[0]
     expected_shapes = [
         tuple(
-            max(1, int(np.floor(base_shape[i] * scale[i])))
-            for i in range(len(base_shape))
+            max(1, int(np.floor(base_shape[i] * sc[i]))) for i in range(len(base_shape))
         )
-        for scale in level_scales
+        for sc in scale
     ]
     actual_shapes = [reader.resolution_level_dims[lvl] for lvl in expected_levels]
     assert actual_shapes == expected_shapes
