@@ -2,7 +2,6 @@ import atexit
 import signal
 from types import FrameType
 
-import ngff_zarr
 import psutil
 from dask.distributed import Client, LocalCluster
 
@@ -16,7 +15,9 @@ class Cluster:
     def __init__(self, n_workers: int = 4) -> None:
         cpu_count = psutil.cpu_count(logical=False) or n_workers
         self._n_workers = max(1, cpu_count // 2)
-        self._worker_memory = ngff_zarr.config.memory_target // self._n_workers
+        self._worker_memory = (
+            int(psutil.virtual_memory().available * 0.5) // self._n_workers
+        )
 
     def start(self) -> Client:
         """
