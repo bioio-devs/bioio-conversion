@@ -82,7 +82,7 @@ class IntListType(click.ParamType):
                 ints = tuple(int(x) for x in text.split(","))
         except Exception:
             self.fail(
-                f"{value!r} is not a valid integer list. Example: '1,1,16,256,256'",
+                f"{value} is not a valid integer list. Example: (1,1,16,256,256)",
                 param,
                 ctx,
             )
