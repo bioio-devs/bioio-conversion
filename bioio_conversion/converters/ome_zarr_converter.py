@@ -48,6 +48,8 @@ class OmeZarrConverter:
         z_scale: Optional[Tuple[float, ...]] = None,
         num_levels: Optional[int] = None,
         memory_target: Optional[int] = None,
+        start_T_src: Optional[int] = None,
+        start_T_dest: Optional[int] = None,
         tbatch: Optional[int] = None,
         dtype: Optional[Union[str, np.dtype]] = None,
         auto_dask_cluster: bool = False,
@@ -119,11 +121,18 @@ class OmeZarrConverter:
             If set (bytes), suggests a single chunk shape derived from level-0 shape
             and ``dtype`` via ``chunk_size_from_memory_target``. Writer may reuse or
             adjust per level.
+        start_T_src : Optional[int]
+            Source T index at which to begin reading from the BioImage. Default: use
+            writer default.
+        start_T_dest : Optional[int]
+            Destination T index at which to begin writing into the store. Default:
+            use writer default.
         tbatch : Optional[int]
-            Batch size for timepoint streaming when a ``'t'`` axis exists and ``T>1``.
+            Number of timepoints to transfer. If None, the converter writes as many
+            as available in both source and destination.
         dtype : Optional[Union[str, np.dtype]]
             Override output data type; defaults to the reader’s dtype.
-         auto_dask_cluster : bool
+        auto_dask_cluster : bool
             If True, automatically spin up a local Dask cluster with
             8 workers (using `Cluster(n_workers=8).start()`) before any
             conversion work begins. Default is False.
@@ -176,7 +185,9 @@ class OmeZarrConverter:
         self._helper_memory_target_bytes = (
             None if memory_target is None else int(memory_target)
         )
-        self._helper_time_batch = None if tbatch is None else max(1, int(tbatch))
+        self._start_T_src = start_T_src
+        self._start_T_dest = start_T_dest
+        self._tbatch = None if tbatch is None else int(tbatch)
 
     def _infer_physical_pixel_sizes(
         self, axis_names: List[str]
@@ -251,7 +262,6 @@ class OmeZarrConverter:
 
         return None
 
-    # TODO: This is a patch for a bioio bug it shouldnt be needed
     def _native_axes_and_shape_for_scene(
         self, scene_index: int
     ) -> Tuple[List[str], Tuple[int, ...]]:
@@ -292,8 +302,8 @@ class OmeZarrConverter:
             )
 
             # (2) Channels
-            ccount = int(getattr(bio.dims, "C", 1)) if "c" in axis_names else 0
-            selected_channel_indexes = list(range(ccount)) if ccount > 0 else None
+            r = bio.reader
+            ccount = int(getattr(r.dims, "C", 1)) if "c" in axis_names else 0
 
             # (3) Scale to writer
             writer_scale_param = (
@@ -361,16 +371,25 @@ class OmeZarrConverter:
 
             writer = OMEZarrWriter(**writer_kwargs)
 
-            # (7) Write pixels in the *same* axis order promised to the writer
-            request_order = "".join(ax.upper() for ax in axis_names)
+            # (7) Read pixels directly from the reader in its native (unpadded) order
+            bio.set_scene(scene_index)
+            r = bio.reader
+            native_order = r.dims.order.upper()
+            data_all = r.get_image_dask_data(native_order)
 
-            if "t" in axis_names and getattr(bio.dims, "T", 1) > 1:
-                kwargs: Dict[str, Any] = {"source": bio}
-                if selected_channel_indexes is not None:
-                    kwargs["channel_indexes"] = selected_channel_indexes
-                if self._helper_time_batch is not None:
-                    kwargs["tbatch"] = self._helper_time_batch
+            # (8) Write
+            has_t = "t" in axis_names
+            T_total = int(getattr(r.dims, "T", 1)) if has_t else 1
+
+            if has_t and T_total > 1:
+                kwargs: Dict[str, Any] = {"data": data_all}
+                if self._start_T_src is not None:
+                    kwargs["start_T_src"] = self._start_T_src
+                if self._start_T_dest is not None:
+                    kwargs["start_T_dest"] = self._start_T_dest
+                kwargs["total_T"] = (
+                    self._tbatch if self._tbatch is not None else T_total
+                )
                 writer.write_timepoints(**kwargs)
             else:
-                dask_array = bio.get_image_dask_data(request_order)
-                writer.write_full_volume(dask_array)
+                writer.write_full_volume(data_all)

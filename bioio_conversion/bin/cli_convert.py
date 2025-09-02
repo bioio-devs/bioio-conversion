@@ -15,6 +15,8 @@ class OmeZarrInitOptions(TypedDict, total=False):
     name: str
     scenes: Union[int, List[int]]
     tbatch: int
+    start_T_src: int
+    start_T_dest: int
     scale: Tuple[Tuple[float, ...], ...]
     xy_scale: Tuple[float, ...]
     z_scale: Tuple[float, ...]
@@ -254,6 +256,18 @@ def _build_channels(
 @click.option(
     "--tbatch", type=int, default=None, help="Number of timepoints per write batch"
 )
+@click.option(
+    "--start-t-src",
+    type=int,
+    default=None,
+    help="Source T index at which to begin reading (maps to writer.start_T_src)",
+)
+@click.option(
+    "--start-t-dest",
+    type=int,
+    default=None,
+    help="Destination T index at which to begin writing (maps to writer.start_T_dest)",
+)
 # --- scaling ---
 @click.option(
     "--scale",
@@ -349,6 +363,8 @@ def main(
     name: Optional[str],
     scenes: Optional[Union[int, List[int]]],
     tbatch: Optional[int],
+    start_t_src: Optional[int],
+    start_t_dest: Optional[int],
     scale: Optional[Tuple[Tuple[float, ...]]],
     xy_scale: Optional[Tuple[float, ...]],
     z_scale: Optional[Tuple[float, ...]],
@@ -381,6 +397,10 @@ def main(
         init_opts["scenes"] = scenes
     if tbatch is not None:
         init_opts["tbatch"] = tbatch
+    if start_t_src is not None:
+        init_opts["start_T_src"] = start_t_src
+    if start_t_dest is not None:
+        init_opts["start_T_dest"] = start_t_dest
     if scale is not None:
         init_opts["scale"] = scale
     if xy_scale:

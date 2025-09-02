@@ -230,6 +230,8 @@ bioio-convert SOURCE -d DESTINATION [options]
 * `-n`, `--name`: base name (defaults to source stem)
 * `-s`, `--scenes`: scene(s) to export (`0` by default; comma-separated list; `None` = all scenes)
 * `--tbatch`: timepoints per write batch (default: `1`)
+* `--start-t-src`: source T index to begin reading (default: 0)
+* `--start-t-dest`: destination T index to begin writing (default: 0)
 * `--scale`: semicolon-separated per-level scale tuples, e.g. `"1,1,1,1,1;1,1,1,0.5,0.5"`
 * `--xy-scale`: XY downsampling factors (e.g. `0.5,0.25`; default: none)
 * `--z-scale`: Z downsampling factors (e.g. `1.0,0.5`; default: none)
