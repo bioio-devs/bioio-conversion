@@ -29,8 +29,7 @@ dynamic = ["version"]
 
 dependencies = [
   "bioio>=3.0.0",
-  "bioio-ome-tiff>=1.4.0",
-  "bioio-ome-zarr>=2.1.0",
+  "bioio-ome-zarr>=2.2.0",
   "numpy>=1.24.0",
   "dask>=2021.10.0",
   "numcodecs>=0.10.0",
@@ -51,6 +50,8 @@ lint = [
 
 test = [
   "coverage>=5.1",
+  "bioio-ome-tiff>=1.4.0",
+  "bioio-czi>=2.4.0",
   "pytest>=5.4.3",
   "pytest-cov>=2.9.0",
   "pytest-raises>=0.11",

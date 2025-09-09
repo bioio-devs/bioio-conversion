@@ -1,7 +1,7 @@
-from typing import Any, List, Optional, Tuple, TypedDict, Union
+from typing import Any, List, Optional, Sequence, Tuple, TypedDict, Union
 
 import click
-from bioio_ome_zarr.writers import DimTuple
+from bioio_ome_zarr.writers import Channel
 from click import Context, Parameter
 
 from ..converters.ome_zarr_converter import OmeZarrConverter
@@ -15,31 +15,39 @@ class OmeZarrInitOptions(TypedDict, total=False):
     name: str
     scenes: Union[int, List[int]]
     tbatch: int
-    level_scales: List[DimTuple]
+    start_T_src: int
+    start_T_dest: int
+    scale: Tuple[Tuple[float, ...], ...]
     xy_scale: Tuple[float, ...]
     z_scale: Tuple[float, ...]
-    chunk_memory_target: int
+    num_levels: int
+    chunk_shape: Union[Tuple[int, ...], Tuple[Tuple[int, ...], ...]]
+    memory_target: int
+    shard_factor: Tuple[int, ...]
     dtype: str
-    channel_names: List[str]
-    auto_dask_cluster: bool
+    channels: List[Channel]
+    physical_pixel_size: List[float]
+    zarr_format: int
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ParamTypes
 # ──────────────────────────────────────────────────────────────────────────────
-class DimTupleListType(click.ParamType):
-    name = "level_scales"
+class ScaleTupleListType(click.ParamType):
+    name = "scale"
 
-    def convert(self, value: Any, param: Parameter, ctx: Context) -> List[DimTuple]:
+    def convert(
+        self, value: Any, param: Parameter, ctx: Context
+    ) -> List[Tuple[float, ...]]:
         text = str(value)
         try:
-            dims: List[DimTuple] = [
+            dims: List[Tuple[float, ...]] = [
                 tuple(float(x) for x in part.split(",")) for part in text.split(";")
             ]
         except Exception:
             self.fail(
-                f"{value!r} is not a valid --level-scales value. "
-                "Expected 't,c,z,y,x;...'",
+                f"{value!r} is not a valid --scale value. "
+                "Expected semicolon-separated tuples like 't,c,z,y,x;...'",
                 param,
                 ctx,
             )
@@ -63,30 +71,161 @@ class FloatListType(click.ParamType):
         return floats
 
 
+class IntListType(click.ParamType):
+    name = "int_list"
+
+    def convert(self, value: Any, param: Parameter, ctx: Context) -> Tuple[int, ...]:
+        text = str(value)
+        try:
+            ints: Tuple[int, ...]
+            if text.strip() == "":
+                ints = tuple()
+            else:
+                ints = tuple(int(x) for x in text.split(","))
+        except Exception:
+            self.fail(
+                f"{value} is not a valid integer list. Example: (1, 1, 16, 256, 256)",
+                param,
+                ctx,
+            )
+        return ints
+
+
+class IntTupleListType(click.ParamType):
+    name = "int_tuple_list"
+
+    def convert(
+        self, value: Any, param: Parameter, ctx: Context
+    ) -> List[Tuple[int, ...]]:
+        text = str(value)
+        try:
+            int_tuples: List[Tuple[int, ...]]
+            if text.strip() == "":
+                int_tuples = []
+            else:
+                int_tuples = [
+                    tuple(int(x) for x in part.split(",")) for part in text.split(";")
+                ]
+        except Exception:
+            self.fail(
+                f"{value!r} is not a valid semicolon-separated list of int tuples. "
+                "Example: '1,1,16,256,256;1,1,16,128,128'",
+                param,
+                ctx,
+            )
+        return int_tuples
+
+
 class ScenesType(click.ParamType):
     name = "scenes"
 
     def convert(
         self, value: Any, param: Parameter, ctx: Context
     ) -> Union[int, List[int]]:
+        text = str(value).strip()
         try:
-            parts = [int(x) for x in str(value).split(",")]
+            parts = [int(x) for x in text.split(",")]
         except Exception:
             self.fail(
                 f"{value!r} is not a valid --scenes value. "
-                "Use a single index or comma-separated list.",
+                "Use a single index or comma-separated list (e.g. '0,2').",
                 param,
                 ctx,
             )
         return parts[0] if len(parts) == 1 else parts
 
 
-class ChannelNamesType(click.ParamType):
-    name = "channel_names"
+class StrListType(click.ParamType):
+    name = "str_list"
 
     def convert(self, value: Any, param: Parameter, ctx: Context) -> List[str]:
-        labels = [c.strip() for c in str(value).split(",")]
-        return labels
+        return [c.strip() for c in str(value).split(",") if c.strip()]
+
+
+class BoolListType(click.ParamType):
+    """Parse comma-separated booleans like 'true,false,1,0,yes,no'."""
+
+    name = "bool_list"
+    TRUE = {"1", "true", "t", "yes", "y", "on"}
+    FALSE = {"0", "false", "f", "no", "n", "off"}
+
+    def convert(self, value: Any, param: Parameter, ctx: Context) -> Tuple[bool, ...]:
+        text = str(value)
+        try:
+            vals: Tuple[bool, ...]
+            if text.strip() == "":
+                vals = tuple()
+            else:
+                parsed: List[bool] = []
+                for tok in text.split(","):
+                    s = tok.strip().lower()
+                    if s in self.TRUE:
+                        parsed.append(True)
+                    elif s in self.FALSE:
+                        parsed.append(False)
+                    else:
+                        raise ValueError(s)
+                vals = tuple(parsed)
+        except Exception:
+            self.fail(
+                f"{value!r} is not a valid boolean list. Use true/false or 1/0.",
+                param,
+                ctx,
+            )
+        return vals
+
+
+def _get(seq: Optional[Sequence[Any]], idx: int, default: Any) -> Any:
+    return seq[idx] if seq is not None and idx < len(seq) else default
+
+
+def _build_channels(
+    labels: List[str],
+    colors: Optional[List[str]],
+    actives: Optional[Tuple[bool, ...]],
+    coefs: Optional[Tuple[float, ...]],
+    families: Optional[List[str]],
+    inverted: Optional[Tuple[bool, ...]],
+    w_min: Optional[Tuple[int, ...]],
+    w_max: Optional[Tuple[int, ...]],
+    w_start: Optional[Tuple[int, ...]],
+    w_end: Optional[Tuple[int, ...]],
+) -> List[Channel]:
+    channels: List[Channel] = []
+    # Determine if any non-required channel attributes were provided at all
+    any_optional = any(
+        v is not None
+        for v in (actives, coefs, families, inverted, w_min, w_max, w_start, w_end)
+    )
+
+    for i, label in enumerate(labels):
+        # Always supply minimal required args
+        base_color = _get(colors, i, "#FFFFFF")
+        ch_kwargs: dict = {"label": label, "color": base_color}
+
+        # Only pass optional kwargs if the user provided that group of values
+        if any_optional:
+            if actives is not None and i < len(actives):
+                ch_kwargs["active"] = bool(actives[i])
+            if coefs is not None and i < len(coefs):
+                ch_kwargs["coefficient"] = float(coefs[i])
+            if families is not None and i < len(families):
+                ch_kwargs["family"] = families[i]
+            if inverted is not None and i < len(inverted):
+                ch_kwargs["inverted"] = bool(inverted[i])
+
+            # Window: only include if any window tokens were provided;
+            # fill missing pieces with Channel defaults.
+            if any(v is not None for v in (w_min, w_max, w_start, w_end)):
+                ch_kwargs["window"] = {
+                    "min": _get(w_min, i, 0),
+                    "max": _get(w_max, i, 255),
+                    "start": _get(w_start, i, 0),
+                    "end": _get(w_end, i, 255),
+                }
+
+        channels.append(Channel(**ch_kwargs))
+    return channels
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -112,56 +251,111 @@ class ChannelNamesType(click.ParamType):
     "-s",
     type=ScenesType(),
     default=None,
-    help=("Which scene(s) to export: a single index or list (default: all scenes)"),
+    help="Which scene(s) to export, e.g. '0' or '0,2'. Default: all",
 )
 @click.option(
-    "--tbatch",
+    "--tbatch", type=int, default=None, help="Number of timepoints per write batch"
+)
+@click.option(
+    "--start-t-src",
     type=int,
     default=None,
-    help="Number of timepoints per write batch",
+    help="Source T index at which to begin reading (maps to writer.start_T_src)",
 )
 @click.option(
-    "--level-scales",
-    type=DimTupleListType(),
+    "--start-t-dest",
+    type=int,
+    default=None,
+    help="Destination T index at which to begin writing (maps to writer.start_T_dest)",
+)
+# --- scaling ---
+@click.option(
+    "--scale",
+    type=ScaleTupleListType(),
     default=None,
     help=(
-        "Semicolon-separated TCZYX tuples per level, " "e.g. '1,1,1,1,1;1,1,1,0.5,0.5'"
+        "Semicolon-separated per-level scale tuples; "
+        "each tuple length must match the native axes. "
+        "Example: '1,1,1,1,1;1,1,1,0.5,0.5'"
     ),
 )
+@click.option("--xy-scale", type=FloatListType(), default=None)
+@click.option("--z-scale", type=FloatListType(), default=None)
+@click.option("--num-levels", type=int, default=None)
+# --- chunking ---
+@click.option("--chunk-shape", type=IntListType(), default=None)
+@click.option("--chunk-shape-per-level", type=IntTupleListType(), default=None)
+@click.option("--shard-factor", type=IntListType(), default=None)
+@click.option("--memory-target", type=int, default=None)
+# --- metadata & writer ---
+@click.option("--dtype", default=None)
+@click.option("--physical-pixel-sizes", type=FloatListType(), default=None)
 @click.option(
-    "--xy-scale",
+    "--zarr-format",
+    type=click.Choice(["2", "3"], case_sensitive=False),
+    default=None,  # Optional: let the writer default when omitted
+    help="Target Zarr format (2=NGFF 0.4, 3=NGFF 0.5). If None, use writer default ",
+)
+# --- Channel (full access) ---
+@click.option(
+    "--channel-labels",
+    type=StrListType(),
+    default=None,
+    help="Comma-separated channel labels. If provided, Channel[] will be built.",
+)
+@click.option(
+    "--channel-colors",
+    type=StrListType(),
+    default=None,
+    help="Comma-separated channel colors (e.g. '#FF00FF,red,#00FF00').",
+)
+@click.option(
+    "--channel-actives",
+    type=BoolListType(),
+    default=None,
+    help="Comma-separated booleans for channel visibility, e.g. 'true,false'.",
+)
+@click.option(
+    "--channel-coefficients",
     type=FloatListType(),
     default=None,
-    help="Comma-separated XY downsampling factors, e.g. '0.5,0.25'",
+    help="Comma-separated floats for coefficients, e.g. '1,0.8,1'.",
 )
 @click.option(
-    "--z-scale",
-    type=FloatListType(),
+    "--channel-families",
+    type=StrListType(),
     default=None,
-    help="Comma-separated Z downsampling factors, e.g. '1.0,0.5'",
+    help="Comma-separated intensity families (e.g. 'linear,sRGB').",
 )
 @click.option(
-    "--chunk-memory-target",
-    type=int,
+    "--channel-inverted",
+    type=BoolListType(),
     default=None,
-    help="Approximate bytes per Zarr chunk",
+    help="Comma-separated booleans for inversion flags.",
 )
 @click.option(
-    "--dtype",
+    "--channel-window-min",
+    type=IntListType(),
     default=None,
-    help="Override output dtype, e.g. 'uint16'",
+    help="Comma-separated ints for window.min per channel.",
 )
 @click.option(
-    "--channel-names",
-    type=ChannelNamesType(),
+    "--channel-window-max",
+    type=IntListType(),
     default=None,
-    help="Comma-separated list of channel labels for metadata",
+    help="Comma-separated ints for window.max per channel.",
 )
 @click.option(
-    "--auto-dask-cluster",
-    is_flag=True,
-    default=False,
-    help="Create Dask cluster with 8 workers for parallel conversion",
+    "--channel-window-start",
+    type=IntListType(),
+    default=None,
+    help="Comma-separated ints for window.start per channel.",
+)
+@click.option(
+    "--channel-window-end",
+    type=IntListType(),
+    default=None,
+    help="Comma-separated ints for window.end per channel.",
 )
 def main(
     source: str,
@@ -169,39 +363,79 @@ def main(
     name: Optional[str],
     scenes: Optional[Union[int, List[int]]],
     tbatch: Optional[int],
-    level_scales: Optional[List[DimTuple]],
+    start_t_src: Optional[int],
+    start_t_dest: Optional[int],
+    scale: Optional[Tuple[Tuple[float, ...]]],
     xy_scale: Optional[Tuple[float, ...]],
     z_scale: Optional[Tuple[float, ...]],
-    chunk_memory_target: Optional[int],
+    num_levels: Optional[int],
+    chunk_shape: Optional[Tuple[int, ...]],
+    chunk_shape_per_level: Optional[List[Tuple[int, ...]]],
+    shard_factor: Optional[Tuple[int, ...]],
+    memory_target: Optional[int],
     dtype: Optional[str],
-    channel_names: Optional[List[str]],
-    auto_dask_cluster: bool,
+    physical_pixel_sizes: Optional[Tuple[float, ...]],
+    zarr_format: Optional[str],
+    channel_labels: Optional[List[str]],
+    channel_colors: Optional[List[str]],
+    channel_actives: Optional[Tuple[bool, ...]],
+    channel_coefficients: Optional[Tuple[float, ...]],
+    channel_families: Optional[List[str]],
+    channel_inverted: Optional[Tuple[bool, ...]],
+    channel_window_min: Optional[Tuple[int, ...]],
+    channel_window_max: Optional[Tuple[int, ...]],
+    channel_window_start: Optional[Tuple[int, ...]],
+    channel_window_end: Optional[Tuple[int, ...]],
 ) -> None:
-    """
-    Convert SOURCE to OME-Zarr stores under DESTINATION.
-    """
     init_opts: OmeZarrInitOptions = {"destination": destination}
 
+    if zarr_format is not None:
+        init_opts["zarr_format"] = int(zarr_format)
     if name is not None:
         init_opts["name"] = name
     if scenes is not None:
         init_opts["scenes"] = scenes
     if tbatch is not None:
         init_opts["tbatch"] = tbatch
-    if level_scales is not None:
-        init_opts["level_scales"] = level_scales
-    if xy_scale is not None:
+    if start_t_src is not None:
+        init_opts["start_T_src"] = start_t_src
+    if start_t_dest is not None:
+        init_opts["start_T_dest"] = start_t_dest
+    if scale is not None:
+        init_opts["scale"] = scale
+    if xy_scale:
         init_opts["xy_scale"] = xy_scale
-    if z_scale is not None:
+    if z_scale:
         init_opts["z_scale"] = z_scale
-    if chunk_memory_target is not None:
-        init_opts["chunk_memory_target"] = chunk_memory_target
+    if num_levels is not None:
+        init_opts["num_levels"] = num_levels
+    if chunk_shape_per_level:
+        init_opts["chunk_shape"] = tuple(chunk_shape_per_level)  # per-level tuples
+    elif chunk_shape:
+        init_opts["chunk_shape"] = chunk_shape  # single tuple
+    if memory_target is not None:
+        init_opts["memory_target"] = memory_target
+    if shard_factor:
+        init_opts["shard_factor"] = shard_factor
     if dtype is not None:
         init_opts["dtype"] = dtype
-    if channel_names is not None:
-        init_opts["channel_names"] = channel_names
-    if auto_dask_cluster:
-        init_opts["auto_dask_cluster"] = True
+    if physical_pixel_sizes:
+        init_opts["physical_pixel_size"] = list(physical_pixel_sizes)
+
+    # Channels (full access; use defaults when options omitted)
+    if channel_labels is not None and len(channel_labels) > 0:
+        init_opts["channels"] = _build_channels(
+            labels=channel_labels,
+            colors=channel_colors,
+            actives=channel_actives,
+            coefs=channel_coefficients,
+            families=channel_families,
+            inverted=channel_inverted,
+            w_min=channel_window_min,
+            w_max=channel_window_max,
+            w_start=channel_window_start,
+            w_end=channel_window_end,
+        )
 
     conv = OmeZarrConverter(source=source, **init_opts)
     conv.convert()
