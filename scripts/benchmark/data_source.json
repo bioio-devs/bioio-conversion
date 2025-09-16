@@ -1,0 +1,12 @@
+{
+  "runs": [
+    {
+      "name": "2GB-czi-s0",
+      "size_label": "2.00 GB",
+      "source": "https://s3.us-west-2.amazonaws.com/production.files.allencell.org/0f9/ce7/094/ef9/7cb/6db/e43/e5c/a04/5fc/93/3500007536_ZSD3_20X_Laminin-01.czi",
+      "scenes": 0,
+      "zarr_format": 3,
+      "dtype": "uint16"
+    }
+  ]
+}
