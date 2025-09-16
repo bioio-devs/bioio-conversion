@@ -3,7 +3,7 @@ export OUT_ROOT="/allen/aics/users/brian.whitney/benchmark" # OUTPUT PATH
 export BENCH_PY="/home/brian.whitney/benchmark.py"   # adjust to your benchmark
 export DATA_SOURCE="/home/brian.whitney/data_source.json" # your datasource
 
-mkdir -p ~/logs
+mkdir -p "$HOME/logs" 
 
 # Count how many runs are in the data source
 NUM_RUNS=$(python - <<PY
@@ -20,8 +20,8 @@ for i in $(seq 0 $((NUM_RUNS-1))); do
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=2-00:00:00
-#SBATCH --output=\$HOME/logs/omez-%A.out
-#SBATCH --error=\$HOME/logs/omez-%A.err
+#SBATCH --output=$HOME/logs/omez-%x_%j.out
+#SBATCH --error=$HOME/logs/omez-%x_%j.err
 set -euo pipefail
 
 # activate env (direct path safest)
