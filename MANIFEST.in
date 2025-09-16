@@ -1,1 +1,2 @@
 exclude bioio_conversion/tests/**
+exclude bioio_conversion/scripts/**
