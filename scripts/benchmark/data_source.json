@@ -1,0 +1,12 @@
+{
+  "runs": [
+    {
+      "name": "2GB-czi-s0",
+      "size_label": "2.00 GB",
+      "source": "PATH or URL",
+      "scenes": 0,
+      "zarr_format": 3,
+      "dtype": "uint16"
+    }
+  ]
+}

@@ -104,6 +104,7 @@ ignore = [
   "Justfile",
   "*docs/**",
   "*tests/**",
+  "scripts/*",
 ]
 
 # static typing
