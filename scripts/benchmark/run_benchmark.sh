@@ -1,7 +1,7 @@
 
-export OUT_ROOT="/allen/aics/users/brian.whitney/benchmark" # OUTPUT PATH
-export BENCH_PY="/home/brian.whitney/benchmark.py"   # adjust to your benchmark
-export DATA_SOURCE="/home/brian.whitney/data_source.json" # your datasource
+export OUT_ROOT="" # OUTPUT PATH
+export BENCH_PY=""   # adjust to your benchmark
+export DATA_SOURCE="" # your datasource
 
 mkdir -p "$HOME/logs" 
 
