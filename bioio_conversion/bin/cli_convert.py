@@ -2,6 +2,7 @@ from typing import Any, List, Optional, Sequence, Tuple, TypedDict, Union
 
 import click
 from bioio_ome_zarr.writers import Channel
+from bioio_ome_zarr.writers.ome_zarr_writer import MultiResolutionShapeSpec
 from click import Context, Parameter
 
 from ..converters.ome_zarr_converter import OmeZarrConverter
@@ -17,13 +18,12 @@ class OmeZarrInitOptions(TypedDict, total=False):
     tbatch: int
     start_T_src: int
     start_T_dest: int
-    scale: Tuple[Tuple[float, ...], ...]
-    xy_scale: Tuple[float, ...]
-    z_scale: Tuple[float, ...]
+    level_shapes: MultiResolutionShapeSpec
     num_levels: int
-    chunk_shape: Union[Tuple[int, ...], Tuple[Tuple[int, ...], ...]]
+    downsample_z: bool
+    chunk_shape: MultiResolutionShapeSpec
     memory_target: int
-    shard_factor: Tuple[int, ...]
+    shard_shape: MultiResolutionShapeSpec
     dtype: str
     channels: List[Channel]
     physical_pixel_size: List[float]
@@ -33,25 +33,6 @@ class OmeZarrInitOptions(TypedDict, total=False):
 # ──────────────────────────────────────────────────────────────────────────────
 # ParamTypes
 # ──────────────────────────────────────────────────────────────────────────────
-class ScaleTupleListType(click.ParamType):
-    name = "scale"
-
-    def convert(
-        self, value: Any, param: Parameter, ctx: Context
-    ) -> List[Tuple[float, ...]]:
-        text = str(value)
-        try:
-            dims: List[Tuple[float, ...]] = [
-                tuple(float(x) for x in part.split(",")) for part in text.split(";")
-            ]
-        except Exception:
-            self.fail(
-                f"{value!r} is not a valid --scale value. "
-                "Expected semicolon-separated tuples like 't,c,z,y,x;...'",
-                param,
-                ctx,
-            )
-        return dims
 
 
 class FloatListType(click.ParamType):
@@ -268,25 +249,63 @@ def _build_channels(
     default=None,
     help="Destination T index at which to begin writing (maps to writer.start_T_dest)",
 )
-# --- scaling ---
+# --- multiscale control ---
 @click.option(
-    "--scale",
-    type=ScaleTupleListType(),
+    "--level-shapes",
+    type=IntTupleListType(),
     default=None,
     help=(
-        "Semicolon-separated per-level scale tuples; "
-        "each tuple length must match the native axes. "
-        "Example: '1,1,1,1,1;1,1,1,0.5,0.5'"
+        "Semicolon-separated per-level SHAPES (ints), level 0 first. "
+        "Each tuple length must match native axes. "
+        "Example: '2,3,5,512,512;2,3,5,256,256;2,3,5,128,128'. "
+        "If provided, overrides --num-levels/--downsample-z."
     ),
 )
-@click.option("--xy-scale", type=FloatListType(), default=None)
-@click.option("--z-scale", type=FloatListType(), default=None)
-@click.option("--num-levels", type=int, default=None)
+@click.option(
+    "--num-levels",
+    type=int,
+    default=None,
+    help="Total multiscale levels (>=1). If provided (and --level-shapes not set), "
+    "build a half-pyramid: X/Y always 0.5^level; add --downsample-z to also "
+    "downsample Z when present.",
+)
+@click.option(
+    "--downsample-z",
+    is_flag=True,
+    default=False,
+    help="With --num-levels, also half Z per level when a Z axis exists.",
+)
 # --- chunking ---
-@click.option("--chunk-shape", type=IntListType(), default=None)
-@click.option("--chunk-shape-per-level", type=IntTupleListType(), default=None)
-@click.option("--shard-factor", type=IntListType(), default=None)
-@click.option("--memory-target", type=int, default=None)
+@click.option(
+    "--chunk-shape",
+    type=IntListType(),
+    default=None,
+    help="Single chunk shape tuple, e.g. '1,1,16,256,256'.",
+)
+@click.option(
+    "--chunk-shape-per-level",
+    type=IntTupleListType(),
+    default=None,
+    help="Per-level chunk shapes, e.g. '1,1,16,256,256;1,1,16,128,128'.",
+)
+@click.option(
+    "--shard-shape",
+    type=IntListType(),
+    default=None,
+    help="(Zarr v3) Single shard shape, e.g. '1,1,128,1024,1024'.",
+)
+@click.option(
+    "--shard-shape-per-level",
+    type=IntTupleListType(),
+    default=None,
+    help="(Zarr v3) Per-level shard shapes, semicolon-separated int tuples.",
+)
+@click.option(
+    "--memory-target",
+    type=int,
+    default=None,
+    help="generate and use per-level chunk shapes from this in-memory byte target.",
+)
 # --- metadata & writer ---
 @click.option("--dtype", default=None)
 @click.option("--physical-pixel-sizes", type=FloatListType(), default=None)
@@ -365,13 +384,13 @@ def main(
     tbatch: Optional[int],
     start_t_src: Optional[int],
     start_t_dest: Optional[int],
-    scale: Optional[Tuple[Tuple[float, ...]]],
-    xy_scale: Optional[Tuple[float, ...]],
-    z_scale: Optional[Tuple[float, ...]],
+    level_shapes: Optional[List[Tuple[int, ...]]],
     num_levels: Optional[int],
+    downsample_z: bool,
     chunk_shape: Optional[Tuple[int, ...]],
     chunk_shape_per_level: Optional[List[Tuple[int, ...]]],
-    shard_factor: Optional[Tuple[int, ...]],
+    shard_shape: Optional[Tuple[int, ...]],
+    shard_shape_per_level: Optional[List[Tuple[int, ...]]],
     memory_target: Optional[int],
     dtype: Optional[str],
     physical_pixel_sizes: Optional[Tuple[float, ...]],
@@ -401,22 +420,24 @@ def main(
         init_opts["start_T_src"] = start_t_src
     if start_t_dest is not None:
         init_opts["start_T_dest"] = start_t_dest
-    if scale is not None:
-        init_opts["scale"] = scale
-    if xy_scale:
-        init_opts["xy_scale"] = xy_scale
-    if z_scale:
-        init_opts["z_scale"] = z_scale
-    if num_levels is not None:
+    if level_shapes and len(level_shapes) > 0:
+        init_opts["level_shapes"] = level_shapes
+    elif num_levels is not None:
         init_opts["num_levels"] = num_levels
-    if chunk_shape_per_level:
-        init_opts["chunk_shape"] = tuple(chunk_shape_per_level)  # per-level tuples
+        if downsample_z:
+            init_opts["downsample_z"] = True
+    if chunk_shape_per_level and len(chunk_shape_per_level) > 0:
+        init_opts["chunk_shape"] = chunk_shape_per_level
     elif chunk_shape:
-        init_opts["chunk_shape"] = chunk_shape  # single tuple
+        init_opts["chunk_shape"] = chunk_shape
+
+    if shard_shape_per_level and len(shard_shape_per_level) > 0:
+        init_opts["shard_shape"] = shard_shape_per_level
+    elif shard_shape:
+        init_opts["shard_shape"] = shard_shape
+
     if memory_target is not None:
         init_opts["memory_target"] = memory_target
-    if shard_factor:
-        init_opts["shard_factor"] = shard_factor
     if dtype is not None:
         init_opts["dtype"] = dtype
     if physical_pixel_sizes:
