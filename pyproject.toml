@@ -29,7 +29,7 @@ dynamic = ["version"]
 
 dependencies = [
   "bioio>=3.0.0",
-  "bioio-ome-zarr>=3.0.0",
+  "bioio-ome-zarr>=3.0.1",
   "numpy>=1.24.0",
   "dask>=2021.10.0",
   "numcodecs>=0.10.0",
