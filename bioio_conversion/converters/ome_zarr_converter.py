@@ -25,7 +25,7 @@ class OmeZarrConverter:
         self,
         *,
         source: str,
-        destination: str,
+        destination: Optional[str] = None,
         scenes: Optional[Union[int, List[int]]] = None,
         name: Optional[str] = None,
         level_shapes: Optional[MultiResolutionShapeSpec] = None,
@@ -58,8 +58,9 @@ class OmeZarrConverter:
         ----------
         source : str
             Path to the input image (any format supported by BioImage).
-        destination : str
+        destination : Optional[str]
             Directory in which to write the ``.ome.zarr`` output(s).
+            If ``None``, the converter will use the current working directory
         scenes : Optional[Union[int, List[int]]]
             Which scene(s) to export:
             - ``None`` → export all scenes
@@ -135,7 +136,7 @@ class OmeZarrConverter:
             conv
         """
         self.source = source
-        self.destination = destination
+        self.destination = destination or str(Path.cwd())
         self.output_basename = name or Path(source).stem
 
         # Optional local Dask cluster
