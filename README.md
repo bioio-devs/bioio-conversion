@@ -256,9 +256,13 @@ bioio-convert SOURCE -d DESTINATION [options]
 
 **Channels:**
 
-* `--channel-labels`, `--channel-colors`, `--channel-actives`, `--channel-coefficients`
-* `--channel-families`, `--channel-inverted`
-* `--channel-window-min`, `--channel-window-max`, `--channel-window-start`, `--channel-window-end`
+* `--channel-labels`: comma-separated channel names
+* `--channel-colors`: comma-separated colors (hex or CSS names)
+* `--channel-actives`: channel visibility flags (`true,false,...`)
+* `--channel-coefficients`: per-channel coefficient floats
+* `--channel-families`: intensity family names (`linear,sRGB,...`)
+* `--channel-inverted`: channel inversion flags
+* `--channel-window-min/max/start/end`: per-channel windowing values
 
 ### Examples
 

@@ -72,7 +72,7 @@ class OmeZarrConverter:
         level_shapes : Optional[List[Tuple[int, ...]]]
             Explicit per-level, per-axis absolute shapes (level 0 first).
             Each tuple length must match the native axis count.
-            If provided, convenience options like ``num_levels`` and ``z_scaling``
+            If provided, convenience options like ``num_levels`` and ``downsample_z``
             are ignored.
         chunk_shape : Optional[Union[Tuple[int, ...], Tuple[Tuple[int, ...], ...]]]
             Chunk shape for Zarr arrays. Either a single shape applied to all levels
@@ -111,8 +111,8 @@ class OmeZarrConverter:
             - ``1`` = only level 0
             - ``2`` = level 0 + one XY half
             - ``3`` = level 0 + two XY halves, etc.
-            If ``z_scaling`` is True, Z is downsampled along with XY at each level.
-        z_scaling : bool, default = False
+            If ``downsample_z`` is True, Z is downsampled along with XY at each level.
+        downsample_z : bool, default = False
             Whether to include the Z axis in downsampling when building levels
             via ``num_levels``. Ignored if ``level_shapes`` is provided.
         memory_target : Optional[int]
