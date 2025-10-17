@@ -7,8 +7,8 @@ import numcodecs
 import numpy as np
 from bioio import BioImage
 from bioio_ome_zarr.writers import Channel, OMEZarrWriter
-from bioio_ome_zarr.writers.ome_zarr_writer import ChunkShape
-from bioio_ome_zarr.writers.utils import chunk_size_from_memory_target
+from bioio_ome_zarr.writers.ome_zarr_writer import MultiResolutionShapeSpec
+from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_target
 from zarr.codecs import BloscCodec
 
 from ..cluster import Cluster
@@ -17,22 +17,20 @@ from ..cluster import Cluster
 class OmeZarrConverter:
     """
     OmeZarrConverter handles conversion of any BioImage‐supported format
-    (TIFF, CZI, etc.) into OME-Zarr stores. Supports exporting one,
-    many, or all scenes from a multi-scene file, with configurable
-    multi-resolution pyramids (full scales or per-axis XY/Z
-    factors) and chunk-size memory targeting.
+    (TIFF, CZI, etc.) into OME-Zarr stores. Supports exporting one, many, or
+    all scenes from a multi-scene file.
     """
 
     def __init__(
         self,
         *,
         source: str,
-        destination: str,
+        destination: Optional[str] = None,
         scenes: Optional[Union[int, List[int]]] = None,
         name: Optional[str] = None,
-        scale: Optional[Tuple[Tuple[float, ...], ...]] = None,
-        chunk_shape: Optional[ChunkShape] = None,
-        shard_factor: Optional[Tuple[int, ...]] = None,
+        level_shapes: Optional[MultiResolutionShapeSpec] = None,
+        chunk_shape: Optional[MultiResolutionShapeSpec] = None,
+        shard_shape: Optional[MultiResolutionShapeSpec] = None,
         compressor: Optional[Union[BloscCodec, numcodecs.abc.Codec]] = None,
         zarr_format: Optional[int] = None,
         image_name: Optional[str] = None,
@@ -44,9 +42,8 @@ class OmeZarrConverter:
         axes_types: Optional[List[str]] = None,
         axes_units: Optional[List[Optional[str]]] = None,
         physical_pixel_size: Optional[List[float]] = None,
-        xy_scale: Optional[Tuple[float, ...]] = None,
-        z_scale: Optional[Tuple[float, ...]] = None,
         num_levels: Optional[int] = None,
+        downsample_z: bool = False,
         memory_target: Optional[int] = None,
         start_T_src: Optional[int] = None,
         start_T_dest: Optional[int] = None,
@@ -61,8 +58,9 @@ class OmeZarrConverter:
         ----------
         source : str
             Path to the input image (any format supported by BioImage).
-        destination : str
+        destination : Optional[str]
             Directory in which to write the ``.ome.zarr`` output(s).
+            If ``None``, the converter will use the current working directory
         scenes : Optional[Union[int, List[int]]]
             Which scene(s) to export:
             - ``None`` → export all scenes
@@ -71,10 +69,11 @@ class OmeZarrConverter:
         name : Optional[str]
             Base name for output files (defaults to the source stem). When exporting
             multiple scenes, each file name is suffixed with the scene’s name.
-        scale : Optional[Tuple[Tuple[float, ...], ...]]
-            Explicit per-level, per-axis relative sizes (one tuple per additional
-            resolution level). Length of each tuple must match the native axis count.
-            If provided, helper options below are ignored.
+        level_shapes : Optional[List[Tuple[int, ...]]]
+            Explicit per-level, per-axis absolute shapes (level 0 first).
+            Each tuple length must match the native axis count.
+            If provided, convenience options like ``num_levels`` and ``downsample_z``
+            are ignored.
         chunk_shape : Optional[Union[Tuple[int, ...], Tuple[Tuple[int, ...], ...]]]
             Chunk shape for Zarr arrays. Either a single shape applied to all levels
             (e.g., ``(1, 1, 16, 256, 256)``) or per-level shapes. Writer validates.
@@ -106,17 +105,16 @@ class OmeZarrConverter:
         physical_pixel_size : Optional[List[float]]
             Physical scale at level 0 per axis. If omitted, values are derived from
             ``BioImage.scale`` for present axes.
-        xy_scale : Optional[Tuple[float, ...]]
-            Convenience: XY downsampling factors per additional level (e.g.,
-            ``(0.5, 0.25)`` for 2 extra levels at 50% and 25% in X/Y). Applies only
-            to present ``x``/``y`` axes. Ignored when ``scale`` is provided.
-        z_scale : Optional[Tuple[float, ...]]
-            Convenience: Z downsampling factors per level. Applies only if a ``z``
-            axis is present. Ignored when ``scale`` is provided.
         num_levels : Optional[int]
-            Convenience: build an XY half-pyramid with ``num_levels`` total levels
-            (1 = level 0 only). Applies only to present ``x``/``y`` axes. Ignored
-            when ``scale`` is provided.
+            Convenience: number of pyramid levels to generate (including level 0).
+            If set, an XY half-pyramid is built by default:
+            - ``1`` = only level 0
+            - ``2`` = level 0 + one XY half
+            - ``3`` = level 0 + two XY halves, etc.
+            If ``downsample_z`` is True, Z is downsampled along with XY at each level.
+        downsample_z : bool, default = False
+            Whether to include the Z axis in downsampling when building levels
+            via ``num_levels``. Ignored if ``level_shapes`` is provided.
         memory_target : Optional[int]
             If set (bytes), suggests a single chunk shape derived from level-0 shape
             and ``dtype`` via ``chunk_size_from_memory_target``. Writer may reuse or
@@ -135,13 +133,13 @@ class OmeZarrConverter:
         auto_dask_cluster : bool
             If True, automatically spin up a local Dask cluster with
             8 workers (using `Cluster(n_workers=8).start()`) before any
-            conversion work begins. Default is False.
+            conv
         """
         self.source = source
-        self.destination = destination
+        self.destination = destination or str(Path.cwd())
         self.output_basename = name or Path(source).stem
 
-        # spin up a local Dask cluster with 8 workers
+        # Optional local Dask cluster
         if auto_dask_cluster:
             cluster = Cluster(n_workers=8)
             cluster.start()
@@ -163,9 +161,9 @@ class OmeZarrConverter:
         )
 
         # Passthroughs
-        self._writer_scale = scale
+        self._writer_level_shapes = level_shapes
         self._writer_chunk_shape = chunk_shape
-        self._writer_shard_factor = shard_factor
+        self._writer_shard_shape = shard_shape
         self._writer_compressor = compressor
         self._writer_zarr_format = zarr_format
         self._writer_image_name = image_name
@@ -179,15 +177,20 @@ class OmeZarrConverter:
         self._writer_physical_pixel_size = physical_pixel_size
 
         # Helpers
-        self._helper_xy_scale = xy_scale
-        self._helper_z_scale = z_scale
         self._helper_num_levels = num_levels
+        self._helper_downsample_z = downsample_z
+
+        # Chunk suggestion
         self._helper_memory_target_bytes = (
-            None if memory_target is None else int(memory_target)
+            None if memory_target is None else memory_target
         )
         self._start_T_src = start_T_src
         self._start_T_dest = start_T_dest
-        self._tbatch = None if tbatch is None else int(tbatch)
+        self._tbatch = None if tbatch is None else tbatch
+
+    # -------------------------------------------------------------------------
+    # Internal helpers
+    # -------------------------------------------------------------------------
 
     def _infer_physical_pixel_sizes(
         self, axis_names: List[str]
@@ -221,47 +224,6 @@ class OmeZarrConverter:
         ]
         return [Channel(label=lab, color="#FFFFFF") for lab in labels[:channel_count]]
 
-    def _build_scales_from_helpers(
-        self, axis_names: List[str]
-    ) -> Optional[Tuple[Tuple[float, ...], ...]]:
-        # xy/z lists
-        if self._helper_xy_scale is not None or self._helper_z_scale is not None:
-            xs_in: Tuple[float, ...] = self._helper_xy_scale or ()
-            zs_in: Tuple[float, ...] = self._helper_z_scale or ()
-            nlevels = max(len(xs_in), len(zs_in))
-            if nlevels == 0:
-                return None
-
-            # Local lists for padding levels
-            xs: List[float] = list(xs_in) + [1.0] * (nlevels - len(xs_in))
-            zs: List[float] = list(zs_in) + [1.0] * (nlevels - len(zs_in))
-
-            per_level_xy: List[Tuple[float, ...]] = []
-            for i in range(nlevels):
-                vec: List[float] = []
-                for ax in axis_names:
-                    if ax in ("x", "y"):
-                        vec.append(float(xs[i]))
-                    elif ax == "z":
-                        vec.append(float(zs[i]))
-                    else:
-                        vec.append(1.0)
-                per_level_xy.append(tuple(vec))
-            return tuple(per_level_xy)
-
-        # simple XY half pyramid
-        if self._helper_num_levels and self._helper_num_levels > 1:
-            per_level_num: List[Tuple[float, ...]] = []
-            for lvl in range(1, self._helper_num_levels):
-                f = 0.5**lvl
-                vec_tup: Tuple[float, ...] = tuple(
-                    (f if ax in ("x", "y") else 1.0) for ax in axis_names
-                )
-                per_level_num.append(vec_tup)
-            return tuple(per_level_num)
-
-        return None
-
     def _native_axes_and_shape_for_scene(
         self, scene_index: int
     ) -> Tuple[List[str], Tuple[int, ...]]:
@@ -276,6 +238,65 @@ class OmeZarrConverter:
         axis_names = [c.lower() for c in order]
         shape = tuple(int(getattr(r.dims, ax)) for ax in order)
         return axis_names, shape
+
+    def _round_shape(
+        self, base_shape: Tuple[int, ...], factors: Tuple[float, ...]
+    ) -> Tuple[int, ...]:
+        """
+        Apply per-axis factors to `base_shape`; clamp each dim to >= 1.
+        """
+        return tuple(max(1, int(round(d * f))) for d, f in zip(base_shape, factors))
+
+    def _build_level_shapes_simple(
+        self,
+        axis_names: List[str],
+        level0_shape: Tuple[int, ...],
+    ) -> Optional[List[Tuple[int, ...]]]:
+        """
+        Build per-level shapes from (num_levels, downsample_z) policy.
+
+        - If num_levels <= 1 or None → return None (single level).
+        - Else produce half-pyramid:
+            * XY always downsample by 0.5^level.
+            * If downsample_z=True and 'z' exists, Z also downsample by 0.5^level.
+            * t/c/other axes remain unchanged.
+        """
+        if not self._helper_num_levels or self._helper_num_levels <= 1:
+            return None
+
+        result: List[Tuple[int, ...]] = [tuple(level0_shape)]
+        for lvl in range(1, self._helper_num_levels):
+            factors: List[float] = []
+            for ax in axis_names:
+                if ax in ("x", "y"):
+                    factors.append(0.5**lvl)
+                elif ax == "z" and self._helper_downsample_z:
+                    factors.append(0.5**lvl)
+                else:
+                    factors.append(1.0)
+            result.append(self._round_shape(level0_shape, tuple(factors)))
+        return result
+
+    @staticmethod
+    def _ensure_per_level_shapes(
+        level_shapes_spec: MultiResolutionShapeSpec,
+    ) -> List[Tuple[int, ...]]:
+        """
+        Normalize a level-shape spec (single or per-level) into a per-level
+        list of tuples.
+        """
+        if len(level_shapes_spec) == 0:
+            raise ValueError("level_shapes cannot be empty")
+        first = level_shapes_spec[0]
+        if isinstance(first, (int, np.integer)):
+            # Single level-0 shape
+            return [tuple(int(x) for x in level_shapes_spec)]
+        # Already per-level
+        return [tuple(int(x) for x in level) for level in level_shapes_spec]
+
+    # -------------------------------------------------------------------------
+    # Public
+    # -------------------------------------------------------------------------
 
     def convert(self) -> None:
         if len(self.scene_indices) > 1:
@@ -304,28 +325,38 @@ class OmeZarrConverter:
             # (2) Channels
             r = bio.reader
             ccount = int(getattr(r.dims, "C", 1)) if "c" in axis_names else 0
+            channel_models = self._resolve_channels(axis_names, ccount)
+            pps = self._infer_physical_pixel_sizes(axis_names)
 
             # (3) Scale to writer
-            writer_scale_param = (
-                self._writer_scale
-                if self._writer_scale is not None
-                else self._build_scales_from_helpers(axis_names)
-            )
+            if self._writer_level_shapes is not None:
+                writer_level_shapes_param: MultiResolutionShapeSpec = (
+                    self._writer_level_shapes
+                )
+            else:
+                derived = self._build_level_shapes_simple(axis_names, level0_shape)
+                writer_level_shapes_param = (
+                    derived if derived is not None else tuple(level0_shape)
+                )
 
             # (4) Chunking
             if self._writer_chunk_shape is not None:
                 writer_chunk_shape_param: Optional[
-                    ChunkShape
+                    MultiResolutionShapeSpec
                 ] = self._writer_chunk_shape
             elif self._helper_memory_target_bytes is not None:
-                suggested = chunk_size_from_memory_target(
-                    level0_shape,
+                # Normalize level shapes to per-level list for the helper
+                level_shapes_list = self._ensure_per_level_shapes(
+                    writer_level_shapes_param
+                )
+                suggested = multiscale_chunk_size_from_memory_target(
+                    level_shapes_list,
                     self.output_dtype,
                     self._helper_memory_target_bytes,
                 )
-                writer_chunk_shape_param = tuple(int(x) for x in suggested)
+                writer_chunk_shape_param = [tuple(map(int, s)) for s in suggested]
             else:
-                writer_chunk_shape_param = None
+                writer_chunk_shape_param = None  # writer suggests per-level ~16 MiB
 
             # (5) Output path
             scene_name = self.scene_names[scene_index]
@@ -339,31 +370,27 @@ class OmeZarrConverter:
             if out_path.exists():
                 raise FileExistsError(f"{out_path} already exists.")
 
-            # (6) Axis metadata (only for present axes)
-            channel_models = self._resolve_channels(axis_names, ccount)
-            pps = self._infer_physical_pixel_sizes(axis_names)
-
+            # (6) Build writer kwargs
             writer_kwargs: Dict[str, Any] = {
                 "store": str(out_path),
-                "shape": level0_shape,
+                "level_shapes": writer_level_shapes_param,
                 "dtype": self.output_dtype,
-                "image_name": (self._writer_image_name or base),
-                "axes_names": (self._writer_axes_names or axis_names),
-                "physical_pixel_size": pps,
                 **{
                     k: v
                     for k, v in {
-                        "scale": writer_scale_param,
                         "chunk_shape": writer_chunk_shape_param,
-                        "shard_factor": self._writer_shard_factor,
+                        "shard_shape": self._writer_shard_shape,
                         "compressor": self._writer_compressor,
                         "zarr_format": self._writer_zarr_format,
+                        "image_name": (self._writer_image_name or base),
                         "channels": channel_models,
                         "rdefs": self._writer_rdefs,
                         "creator_info": self._writer_creator_info,
                         "root_transform": self._writer_root_transform,
+                        "axes_names": (self._writer_axes_names or axis_names),
                         "axes_types": self._writer_axes_types,
                         "axes_units": self._writer_axes_units,
+                        "physical_pixel_size": pps,
                     }.items()
                     if v is not None
                 },

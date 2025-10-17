@@ -67,34 +67,39 @@ def _coerce_tuple_like(x):
 
 
 def _writer_kwargs_from_run(run: Dict[str, Any]) -> Dict[str, Any]:
-    """Build kwargs for OmeZarrConverter, coercing tuple-likes and ints."""
+    """
+    Build kwargs for OmeZarrConverter from a single 'run' dict.
+    """
     kw: Dict[str, Any] = {k: v for k, v in run.items() if k not in RUNNER_KEYS}
 
-    # tuple-like fields
+    # New plural shape fields (per-level)
+    for key in ("level_shapes", "chunk_shape", "shard_shape"):
+        if key in kw and kw[key] is not None:
+            kw[key] = _coerce_tuple_like(kw[key])
+
+
     for key in (
-        "scale",
-        "chunk_shape",
-        "shard_factor",
         "axes_names",
         "axes_types",
         "axes_units",
         "physical_pixel_size",
-        "xy_scale",
-        "z_scale",
     ):
-        if key in kw:
+        if key in kw and kw[key] is not None:
             kw[key] = _coerce_tuple_like(kw[key])
 
     # scenes can be int or list[int]
-    if "scenes" in kw and isinstance(kw["scenes"], list):
-        kw["scenes"] = [int(s) for s in kw["scenes"]]
+    if "scenes" in kw:
+        if isinstance(kw["scenes"], list):
+            kw["scenes"] = [int(s) for s in kw["scenes"]]
+        elif kw["scenes"] is not None:
+            kw["scenes"] = int(kw["scenes"])
 
     # dtype as string (writer accepts str or np.dtype)
     if "dtype" in kw and kw["dtype"] is not None:
         kw["dtype"] = str(kw["dtype"])
 
-    # integer-ish args
-    for key in ("memory_target", "tbatch", "start_T_src", "start_T_dest"):
+    # numeric-ish args
+    for key in ("memory_target", "tbatch", "start_T_src", "start_T_dest", "zarr_format"):
         if key in kw and kw[key] is not None:
             kw[key] = int(kw[key])
 

@@ -38,8 +38,8 @@ pip install bioio-conversion
   * **Features**:
 
     * Multi-scene export (`scenes=0`, list, or `None` = all)
-    * Flexible multiscale pyramid options (`scale`, `xy_scale`, `z_scale`, `num_levels`)
-    * Chunk-size tuning (`chunk_shape`, `memory_target`, `shard_factor`)
+    * Flexible multiscale pyramid options (`level_shapes`, `num_levels`, `downsample_z`)
+    * Chunk-size tuning (`chunk_shape`, `memory_target`, `shard_shape`)
     * Metadata options (`channels`, `axes_names`, `axes_units`, `physical_pixel_size`)
     * Output format (`zarr_format` = 2 or 3)
     * Optional auto Dask cluster
@@ -91,11 +91,10 @@ conv = OmeZarrConverter(
     scenes=None,
     name='experiment1',
     tbatch=2,
-    xy_scale=(0.5, 0.25),
-    z_scale=(1.0, 0.5),
     num_levels=3,
+    downsample_z=True,
     chunk_shape=(1,1,16,256,256),
-    shard_factor=(1,1,1,1,1),
+    shard_shape=(1,1,128,1024,1024),
     memory_target=32*1024*1024,
     dtype='uint16',
     compressor=BloscCodec(),
@@ -104,16 +103,17 @@ conv = OmeZarrConverter(
 conv.convert()
 ```
 
-#### Explicit `scale`
+#### Explicit `level_shapes`
 
 ```python
 conv = OmeZarrConverter(
     source="image_tczyx.tif",
     destination="out_tczyx",
-    scale=(
-        (1, 1, 1, 0.5, 0.5),
-        (1, 1, 0.5, 0.25, 0.25)
-    ),
+    level_shapes=[
+        (1, 3, 5, 325, 475),
+        (1, 3, 2, 162, 238),
+        (1, 3, 1, 81, 119),
+    ],
 )
 conv.convert()
 ```
@@ -158,7 +158,8 @@ conv.convert()
 conv = OmeZarrConverter(
     source="volume_zyx.tif",
     destination="out_zyx",
-    z_scale=(1.0, 0.5),  # halve Z for the second level
+    num_levels=2,
+    downsample_z=True,
 )
 conv.convert()
 ```
@@ -167,7 +168,7 @@ conv.convert()
 
 ### CSV-driven batch conversion
 
-The CSV file should have a header row that names the job parameters. At minimum, include a `source` column (path to each input image). You may also include per-job overrides for any converter option (e.g. `destination`, `scenes`, `tbatch`, `xy_scale`, `z_scale`, `chunk_memory_target`, `dtype`, `channel_names`, etc.). Values in each row will be merged with the `default_opts` you passed to `BatchConverter`.
+The CSV file should have a header row that names the job parameters. At minimum, include a `source` column (path to each input image). You may also include per-job overrides for any converter option (e.g. `destination`, `scenes`, `tbatch`, `num_levels`, `downsample_z`, `level_shapes`, `memory_target`, `dtype`, `channel_names`, etc.). Values in each row will be merged with the `default_opts` you passed to `BatchConverter`.
 
 ```python
 from bioio_conversion import BatchConverter
@@ -232,17 +233,29 @@ bioio-convert SOURCE -d DESTINATION [options]
 * `--tbatch`: timepoints per write batch (default: `1`)
 * `--start-t-src`: source T index to begin reading (default: 0)
 * `--start-t-dest`: destination T index to begin writing (default: 0)
-* `--scale`: semicolon-separated per-level scale tuples, e.g. `"1,1,1,1,1;1,1,1,0.5,0.5"`
-* `--xy-scale`: XY downsampling factors (e.g. `0.5,0.25`; default: none)
-* `--z-scale`: Z downsampling factors (e.g. `1.0,0.5`; default: none)
-* `--num-levels`: number of XY half-pyramid levels (default: 1 = none)
+
+**Multiscale:**
+
+* `--level-shapes`: semicolon-separated absolute shapes (level 0 first)
+* `--num-levels`: number of pyramid levels (including level 0)
+* `--downsample-z`: include Z in half-pyramid downsampling
+
+**Chunking / shards:**
+
 * `--chunk-shape`: explicit chunk shape (e.g. `1,1,16,256,256`)
 * `--chunk-shape-per-level`: semicolon-separated chunk shapes per level
 * `--memory-target`: bytes per chunk (default: 16 MB)
-* `--shard-factor`: shard factors per axis (Zarr v3 only)
+* `--shard-shape`: shard shape (Zarr v3 only)
+* `--shard-shape-per-level`: per-level shard shapes (Zarr v3 only)
+
+**Writer / metadata:**
+
 * `--dtype`: output dtype override (e.g. `uint16`; default: reader’s dtype)
 * `--physical-pixel-sizes`: comma-separated floats (per axis, level-0)
 * `--zarr-format`: `2` (NGFF 0.4) or `3` (NGFF 0.5); default: writer decides
+
+**Channels:**
+
 * `--channel-labels`: comma-separated channel names
 * `--channel-colors`: comma-separated colors (hex or CSS names)
 * `--channel-actives`: channel visibility flags (`true,false,...`)
@@ -250,7 +263,6 @@ bioio-convert SOURCE -d DESTINATION [options]
 * `--channel-families`: intensity family names (`linear,sRGB,...`)
 * `--channel-inverted`: channel inversion flags
 * `--channel-window-min/max/start/end`: per-channel windowing values
-* `--auto-dask-cluster`: automatically spin up a local Dask cluster (default: off)
 
 ### Examples
 
@@ -278,22 +290,23 @@ bioio-convert multi_scene.ome.tiff -d zarr_out
 bioio-convert multi_scene.ome.tiff -d zarr_out -s 0,2
 ```
 
-#### XY-only scaling
+#### Simple half-pyramid (XY only)
 
 ```bash
-bioio-convert image.tif -d out_dir --xy-scale 0.5,0.25
+bioio-convert volume.tif -d out_xy --num-levels 3
 ```
 
-#### Z-only scaling
+#### Simple half-pyramid (XYZ)
 
 ```bash
-bioio-convert image.tif -d out_dir --z-scale 1.0,0.5
+bioio-convert volume_tczyx.tif -d out_xyz --num-levels 3 --downsample-z
 ```
 
-#### Explicit multiscale levels
+#### Explicit level shapes
 
 ```bash
-bioio-convert image.tif -d out_dir --scale "1,1,1,1,1;1,1,1,0.5,0.5"
+bioio-convert image.tif -d out_explicit \
+  --level-shapes "1,3,5,325,475;1,3,2,162,238;1,3,1,81,119"
 ```
 
 #### Dtype and chunking
@@ -307,7 +320,7 @@ bioio-convert image.tif -d out_dir --dtype uint16 --memory-target 33554432
 ```bash
 bioio-convert image_with_channels.czi -d out_dir \
   --channel-labels DAPI,GFP,TRITC \
-  --channel-colors"#0000FF,#00FF00,#FF0000" \
+  --channel-colors "#0000FF,#00FF00,#FF0000" \
   --channel-actives true,true,false
 ```
 
@@ -338,7 +351,7 @@ bioio-batch-convert \
   --destination batch_out \
   --tbatch 4 \
   --dtype uint16 \
-  --xy-scale 0.5,0.25
+  --num-levels 3
 ```
 
 #### Directory mode
@@ -350,7 +363,7 @@ bioio-batch-convert \
   --depth 2 \
   --pattern '*.czi' \
   --destination output_zarr \
-  --scale "1,1,1,1,1;1,1,1,0.5,0.5"
+  --level-shapes "1,3,5,325,475;1,3,2,162,238;1,3,1,81,119"
 ```
 
 #### List mode
@@ -361,7 +374,7 @@ bioio-batch-convert \
   --paths a.czi b.czi c.tiff \
   --destination list_out \
   --name batch_run \
-  --xy-scale 0.25,0.125
+  --num-levels 2 --downsample-z
 ```
 
 ---
@@ -371,4 +384,3 @@ bioio-batch-convert \
 BSD 3-Clause [https://bioio-devs.github.io/bioio-conversion/LICENSE](LICENSE)
 
 Report bugs at: [https://github.com/bioio-devs/bioio-conversion/issues](https://github.com/bioio-devs/bioio-conversion/issues)
-

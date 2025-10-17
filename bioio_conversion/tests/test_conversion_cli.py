@@ -1,7 +1,6 @@
 import pathlib
-from typing import Sequence
+from typing import List, Tuple
 
-import numpy as np
 import pytest
 from bioio import BioImage
 from click.testing import CliRunner
@@ -59,19 +58,24 @@ def test_cli_file_to_zarr(
 
 
 @pytest.mark.parametrize(
-    "scale, expected_levels",
+    "level_shapes, expected_levels",
     [
-        ([(1, 1, 1, 1, 1)], (0,)),
-        ([(1, 1, 1, 1, 1), (1, 1, 1, 0.5, 0.5)], (0, 1)),
-        ([(1, 1, 1, 1, 1), (1, 1, 0.5, 1, 1)], (0, 1)),
-        ([(1, 1, 1, 1, 1), (1, 1, 1, 0.5, 0.5), (1, 1, 0.5, 0.5, 0.5)], (0, 1, 2)),
+        # 1 level (L0 only)
+        ([(1, 3, 5, 325, 475)], (0,)),
+        # XY only → 2 levels
+        ([(1, 3, 5, 325, 475), (1, 3, 5, 162, 238)], (0, 1)),
+        # Z only → 2 levels
+        ([(1, 3, 5, 325, 475), (1, 3, 2, 325, 475)], (0, 1)),
+        # "XYZ-3lvl"
+        ([(1, 3, 5, 325, 475), (1, 3, 5, 162, 238), (1, 3, 2, 162, 238)], (0, 1, 2)),
+        # 5 levels of XY halving relative to L0
         (
             [
-                (1, 1, 1, 1, 1),
-                (1, 1, 1, 0.5, 0.5),
-                (1, 1, 1, 0.25, 0.25),
-                (1, 1, 1, 0.125, 0.125),
-                (1, 1, 1, 0.0625, 0.0625),
+                (1, 3, 5, 325, 475),
+                (1, 3, 5, 162, 238),
+                (1, 3, 5, 81, 119),
+                (1, 3, 5, 41, 59),
+                (1, 3, 5, 20, 30),
             ],
             (0, 1, 2, 3, 4),
         ),
@@ -80,7 +84,7 @@ def test_cli_file_to_zarr(
 )
 def test_cli_zarr_resolution_levels(
     tmp_path: pathlib.Path,
-    scale: Sequence[tuple[float, ...]],
+    level_shapes: List[Tuple[int, ...]],
     expected_levels: tuple[int, ...],
 ) -> None:
     # Arrange
@@ -88,7 +92,9 @@ def test_cli_zarr_resolution_levels(
     tiff_path = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.ome.tiff"
     out_dir = tmp_path
     zarr_name = "resolution_test"
-    scales_arg = ";".join(",".join(str(x) for x in lvl) for lvl in scale)
+
+    # Encode for CLI: "a,b,c,d,e; a,b,c,d,e; ..."
+    level_shapes_arg = ";".join(",".join(str(x) for x in lvl) for lvl in level_shapes)
 
     # Act
     result = runner.invoke(
@@ -99,8 +105,8 @@ def test_cli_zarr_resolution_levels(
             str(out_dir),
             "-n",
             zarr_name,
-            "--scale",
-            scales_arg,
+            "--level-shapes",
+            level_shapes_arg,
             "--scenes",
             "0",
         ],
@@ -112,14 +118,8 @@ def test_cli_zarr_resolution_levels(
     bio = BioImage(str(out_dir / f"{zarr_name}.ome.zarr"))
     bio.set_scene(0)
 
-    # BioImage should expose the same multires info as before
     assert tuple(bio.resolution_levels) == expected_levels
-
-    base_shape = bio.resolution_level_dims[0]
-    # Universal writer uses floor-and-clamp when deriving level shapes
-    expected_shapes = [
-        tuple(max(1, int(np.floor(base_shape[i] * sc[i]))) for i in range(5))
-        for sc in scale
+    actual_shapes = [
+        tuple(int(x) for x in bio.resolution_level_dims[lvl]) for lvl in expected_levels
     ]
-    actual_shapes = [bio.resolution_level_dims[lvl] for lvl in expected_levels]
-    assert actual_shapes == expected_shapes
+    assert actual_shapes == level_shapes[: len(expected_levels)]
