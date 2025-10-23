@@ -2,6 +2,8 @@
 clean:
 	rm -fr build
 	rm -fr docs/_build
+	rm -f docs/bioio_conversion*.rst
+	rm -fr docs/generated
 	rm -fr dist
 	rm -fr .eggs
 	find . -name '*.egg-info' -exec rm -fr {} +
@@ -32,10 +34,9 @@ build:
 
 # generate Sphinx HTML documentation
 generate-docs:
-	rm -f docs/bioio_conversion*.rst
-	rm -f docs/modules.rst
-	sphinx-apidoc -o docs bioio_conversion **/tests
-	python -msphinx docs docs/_build
+    rm -f docs/bioio_conversion*.rst
+    sphinx-apidoc -o docs -T bioio_conversion **/tests
+    python -msphinx docs docs/_build
 
 # serve docs in browser
 serve-docs:

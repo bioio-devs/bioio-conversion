@@ -59,12 +59,13 @@ test = [
 ]
 
 docs = [
-  "sphinx>=6.0",
-  "furo",
-  "sphinx-copybutton",
+  "gitchangelog>=3.0.4",
+  "Sphinx>=8.0.0",
+  "furo>=2022.4.7",
   "numpydoc",
-  "myst-parser",
-  "sphinx-autobuild",
+  "sphinx-copybutton",
+  "myst-parser>=1.0",
+  "linkify-it-py>=2.0.0",
 ]
 
 # build settings
