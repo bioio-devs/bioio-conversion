@@ -1,7 +1,7 @@
 # bioio-conversion
 
 [![Build Status](https://github.com/bioio-devs/bioio-conversion/actions/workflows/ci.yml/badge.svg)](https://github.com/bioio-devs/bioio-conversion/actions)
-[![Documentation](https://github.com/bioio-devs/bioio-conversion/actions/workflows/docs.yml/badge.svg)](https://bioio-devs.github.io/bioio-conversion)
+[![Documentation](https://github.com/bioio-devs/bioio-conversion/actions/workflows/docs.yml/badge.svg)](https://bioio-devs.github.io/bioio-conversion/overview.html)
 [![PyPI version](https://badge.fury.io/py/bioio-conversion.svg)](https://badge.fury.io/py/bioio-conversion)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11–3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
@@ -14,7 +14,7 @@ A BioIO conversion tool for going between image formats.
 
 See the full documentation on our GitHub Pages site:
 
-[https://bioio-devs.github.io/bioio-conversion](https://bioio-devs.github.io/bioio-conversion)
+[https://bioio-devs.github.io/bioio-conversion](https://bioio-devs.github.io/bioio-conversion/overview.html)
 
 ---
 
