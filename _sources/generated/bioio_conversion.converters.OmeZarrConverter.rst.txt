@@ -1,0 +1,23 @@
+﻿bioio\_conversion.converters.OmeZarrConverter
+=============================================
+
+.. currentmodule:: bioio_conversion.converters
+
+.. autoclass:: OmeZarrConverter
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~OmeZarrConverter.__init__
+      ~OmeZarrConverter.convert
+   
+   
+
+   
+   
+   

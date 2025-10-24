@@ -1,0 +1,26 @@
+﻿bioio\_conversion.converters.BatchConverter
+===========================================
+
+.. currentmodule:: bioio_conversion.converters
+
+.. autoclass:: BatchConverter
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~BatchConverter.__init__
+      ~BatchConverter.from_csv
+      ~BatchConverter.from_directory
+      ~BatchConverter.from_list
+      ~BatchConverter.run_jobs
+   
+   
+
+   
+   
+   
