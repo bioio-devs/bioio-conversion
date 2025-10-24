@@ -1,17 +1,24 @@
-.. bioio-conversion documentation master file
-
-Welcome to bioio-conversion’s documentation!
-===========================================
+Welcome to Bioio Conversion’s documentation!
+============================================
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Contents:
 
-   modules
+   Overview <overview>
+   Full API Reference <api_reference>
+
+Important Classes
+=================
+
+.. autosummary::
+   :toctree: generated/
+
+   bioio_conversion.converters.OmeZarrConverter
+   bioio_conversion.converters.BatchConverter
 
 Indices and tables
 ==================
-
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`

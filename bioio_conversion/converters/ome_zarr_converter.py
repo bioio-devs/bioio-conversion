@@ -54,6 +54,7 @@ class OmeZarrConverter:
         """
         Initialize an OME-Zarr converter with flexible scene selection,
         pyramid construction, and chunk-sizing.
+
         Parameters
         ----------
         source : str
