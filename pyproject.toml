@@ -38,8 +38,8 @@ dependencies = [
 
 # Console script entry points
 [project.scripts]
-bioio-convert = "bioio_conversion.cli_convert:main"
-bioio-batch-convert   = "bioio_conversion.cli_batch_convert:main"
+bioio-convert = "bioio_conversion.bin.cli_convert:main"
+bioio-batch-convert   = "bioio_conversion.bin.cli_batch_convert:main"
 
 # extra dependencies
 # https://peps.python.org/pep-0621/#dependencies-optional-dependencies
