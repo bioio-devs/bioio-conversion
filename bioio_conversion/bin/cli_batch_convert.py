@@ -83,28 +83,40 @@ def main(
     """
     Batch-convert images via CSV, directory walk, or explicit list.
     """
-    # Parse extra options
-    default_opts: Dict[str, Any] = parse_extra_opts(extra_opts)
+    try:
+        # Parse extra options
+        default_opts: Dict[str, Any] = parse_extra_opts(extra_opts)
 
-    bc = BatchConverter(default_opts=default_opts)
+        bc = BatchConverter(default_opts=default_opts)
 
-    mode_lower = mode.lower()
-    if mode_lower == "csv":
-        if csv_file is None:
-            raise click.BadParameter("--csv-file is required in csv mode")
-        jobs = bc.from_csv(Path(csv_file))
-    elif mode_lower == "dir":
-        if directory is None:
-            raise click.BadParameter("--directory is required in dir mode")
-        jobs = bc.from_directory(Path(directory), max_depth=depth, pattern=pattern)
-    else:  # list
-        if not paths:
-            raise click.BadParameter("--paths is required in list mode")
-        jobs = bc.from_list(list(paths))
+        mode_lower = mode.lower()
+        if mode_lower == "csv":
+            if csv_file is None:
+                raise click.BadParameter("--csv-file is required in csv mode")
+            jobs = bc.from_csv(Path(csv_file))
+        elif mode_lower == "dir":
+            if directory is None:
+                raise click.BadParameter("--directory is required in dir mode")
+            jobs = bc.from_directory(
+                Path(directory),
+                max_depth=depth,
+                pattern=pattern,
+            )
+        else:  # list
+            if not paths:
+                raise click.BadParameter("--paths is required in list mode")
+            jobs = bc.from_list(list(paths))
 
-    click.echo(f"Discovered {len(jobs)} job(s), commencing conversion…")
-    bc.run_jobs(jobs)
-    click.echo("Batch conversion complete.")
+        click.echo(f"Discovered {len(jobs)} job(s), commencing conversion…")
+        bc.run_jobs(jobs)
+        click.echo("Batch conversion complete.")
+
+    except click.BadParameter:
+        raise
+    except KeyboardInterrupt:
+        raise click.Abort()
+    except Exception as e:
+        raise click.ClickException(f"Batch conversion failed: {e}")
 
 
 if __name__ == "__main__":
