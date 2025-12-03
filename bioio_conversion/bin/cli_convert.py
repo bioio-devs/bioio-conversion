@@ -457,9 +457,15 @@ def main(
             w_start=channel_window_start,
             w_end=channel_window_end,
         )
-
-    conv = OmeZarrConverter(source=source, **init_opts)
-    conv.convert()
+    try:
+        conv = OmeZarrConverter(source=source, **init_opts)
+        conv.convert()
+    except FileExistsError as e:
+        raise click.ClickException(str(e))
+    except KeyboardInterrupt:
+        raise click.Abort()
+    except Exception as e:
+        raise click.ClickException(f"Conversion failed: {e}")
 
 
 if __name__ == "__main__":
