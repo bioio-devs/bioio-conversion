@@ -12,6 +12,9 @@ from ..converters.ome_zarr_converter import OmeZarrConverter
 # TypedDict for converter init kwargs
 # ──────────────────────────────────────────────────────────────────────────────
 class OmeZarrInitOptions(TypedDict, total=False):
+    axes_names: List[str]
+    axes_types: List[str]
+    axes_units: List[Optional[str]]
     destination: str
     name: str
     scenes: Union[int, List[int]]
@@ -209,6 +212,32 @@ def _build_channels(
     return channels
 
 
+class OptionalStrListType(click.ParamType):
+    """
+    Comma-separated strings where '', 'none', 'null' → None.
+
+    Example:
+      's,,um,um,um'        -> ['s', None, 'um', 'um', 'um']
+      'none,none,um'      -> [None, None, 'um']
+      's,null,um,um,um'   -> ['s', None, 'um', 'um', 'um']
+    """
+
+    name = "optional_str_list"
+    NONE_TOKENS = {"", "none", "null", "nil"}
+
+    def convert(
+        self, value: Any, param: Parameter, ctx: Context
+    ) -> List[Optional[str]]:
+        parts = [p.strip() for p in str(value).split(",")]
+        out: List[Optional[str]] = []
+        for p in parts:
+            if p.lower() in self.NONE_TOKENS:
+                out.append(None)
+            else:
+                out.append(p)
+        return out
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CLI definition
 # ──────────────────────────────────────────────────────────────────────────────
@@ -376,6 +405,27 @@ def _build_channels(
     default=None,
     help="Comma-separated ints for window.end per channel.",
 )
+@click.option(
+    "--axes-names",
+    type=StrListType(),
+    default=None,
+    help="Comma-separated axis names to write. Must match native order.",
+)
+@click.option(
+    "--axes-types",
+    type=StrListType(),
+    default=None,
+    help="Comma-separated axis types (e.g. time,channel,space,...).",
+)
+@click.option(
+    "--axes-units",
+    type=OptionalStrListType(),
+    default=None,
+    help=(
+        "Comma-separated axis units. "
+        "Use blank or 'none' for missing. Example: 's,,um,um,um'."
+    ),
+)
 def main(
     source: str,
     destination: str,
@@ -405,6 +455,9 @@ def main(
     channel_window_max: Optional[Tuple[int, ...]],
     channel_window_start: Optional[Tuple[int, ...]],
     channel_window_end: Optional[Tuple[int, ...]],
+    axes_names: Optional[List[str]],
+    axes_types: Optional[List[str]],
+    axes_units: Optional[List[Optional[str]]],
 ) -> None:
     init_opts: OmeZarrInitOptions = {"destination": destination}
 
@@ -457,6 +510,15 @@ def main(
             w_start=channel_window_start,
             w_end=channel_window_end,
         )
+
+    # Axis Control
+    if axes_names is not None:
+        init_opts["axes_names"] = axes_names
+    if axes_types is not None:
+        init_opts["axes_types"] = axes_types
+    if axes_units is not None:
+        init_opts["axes_units"] = axes_units
+
     try:
         conv = OmeZarrConverter(source=source, **init_opts)
         conv.convert()

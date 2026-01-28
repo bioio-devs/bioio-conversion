@@ -40,7 +40,7 @@ pip install bioio-conversion
     * Multi-scene export (`scenes=0`, list, or `None` = all)
     * Flexible multiscale pyramid options (`level_shapes`, `num_levels`, `downsample_z`)
     * Chunk-size tuning (`chunk_shape`, `memory_target`, `shard_shape`)
-    * Metadata options (`channels`, `axes_names`, `axes_units`, `physical_pixel_size`)
+    * Metadata options (`channels`, `axes_names`, `axes_units`, `axes_types`, `physical_pixel_size`)
     * Output format (`zarr_format` = 2 or 3)
     * Optional auto Dask cluster
   * **Import path**:
@@ -264,6 +264,11 @@ bioio-convert SOURCE -d DESTINATION [options]
 * `--channel-inverted`: channel inversion flags
 * `--channel-window-min/max/start/end`: per-channel windowing values
 
+**Axis:**
++* `--axes-names`: comma-separated axis names (metadata only)
++* `--axes-types`: comma-separated axis types (`time,channel,space,...`)
++* `--axes-units`: comma-separated axis units; use `none` or blank for missing
+
 ### Examples
 
 #### Basic usage
@@ -322,6 +327,14 @@ bioio-convert image_with_channels.czi -d out_dir \
   --channel-labels DAPI,GFP,TRITC \
   --channel-colors "#0000FF,#00FF00,#FF0000" \
   --channel-actives true,true,false
+```
+
+#### Axis Metadata
+```
+bioio-convert image_tczyx.tif -d out_axes \
+--axes-names t,c,z,y,x \
+--axes-types time,channel,space,space,space \
+--axes-units s,,um,um,um
 ```
 
 #### Physical pixel sizes
