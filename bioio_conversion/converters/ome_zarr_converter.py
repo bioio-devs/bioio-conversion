@@ -216,13 +216,28 @@ class OmeZarrConverter:
     def _resolve_channels(
         self, axis_names: List[str], channel_count: int
     ) -> Optional[List[Channel]]:
-        if "c" not in axis_names:
-            return None
+        """
+        Resolve channel metadata for the writer.
+
+        Policy:
+        - If the user explicitly provided channels, always honor them
+        (even if no 'c' axis is present).
+        - Otherwise, only derive channels if a 'c' axis exists.
+        """
+
+        # 1. User explicitly supplied channels → always use them
         if self._writer_channels is not None:
             return self._writer_channels
+
+        # 2. No channel axis → no channels to derive
+        if "c" not in axis_names:
+            return None
+
+        # 3. Derive minimal channels from BioImage metadata
         labels = self.bioimage.channel_names or [
             f"Channel:{i}" for i in range(channel_count)
         ]
+
         return [Channel(label=lab, color="#FFFFFF") for lab in labels[:channel_count]]
 
     def _native_axes_and_shape_for_scene(
