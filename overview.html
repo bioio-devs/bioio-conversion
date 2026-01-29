@@ -5,10 +5,10 @@
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="index" title="Index" href="genindex.html"><link rel="search" title="Search" href="search.html"><link rel="next" title="API Reference" href="api_reference.html"><link rel="prev" title="Welcome to Bioio Conversion’s documentation!" href="index.html">
 
-    <!-- Generated with Sphinx 8.2.3 and Furo 2025.09.25 -->
+    <!-- Generated with Sphinx 9.0.4 and Furo 2025.12.19 -->
         <title>Overview - bioio-conversion 0.1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
-    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=580074bf" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
     
@@ -279,7 +279,7 @@
 <li><p>Multi-scene export (<code class="docutils literal notranslate"><span class="pre">scenes=0</span></code>, list, or <code class="docutils literal notranslate"><span class="pre">None</span></code> = all)</p></li>
 <li><p>Flexible multiscale pyramid options (<code class="docutils literal notranslate"><span class="pre">level_shapes</span></code>, <code class="docutils literal notranslate"><span class="pre">num_levels</span></code>, <code class="docutils literal notranslate"><span class="pre">downsample_z</span></code>)</p></li>
 <li><p>Chunk-size tuning (<code class="docutils literal notranslate"><span class="pre">chunk_shape</span></code>, <code class="docutils literal notranslate"><span class="pre">memory_target</span></code>, <code class="docutils literal notranslate"><span class="pre">shard_shape</span></code>)</p></li>
-<li><p>Metadata options (<code class="docutils literal notranslate"><span class="pre">channels</span></code>, <code class="docutils literal notranslate"><span class="pre">axes_names</span></code>, <code class="docutils literal notranslate"><span class="pre">axes_units</span></code>, <code class="docutils literal notranslate"><span class="pre">physical_pixel_size</span></code>)</p></li>
+<li><p>Metadata options (<code class="docutils literal notranslate"><span class="pre">channels</span></code>, <code class="docutils literal notranslate"><span class="pre">axes_names</span></code>, <code class="docutils literal notranslate"><span class="pre">axes_units</span></code>, <code class="docutils literal notranslate"><span class="pre">axes_types</span></code>, <code class="docutils literal notranslate"><span class="pre">physical_pixel_size</span></code>)</p></li>
 <li><p>Output format (<code class="docutils literal notranslate"><span class="pre">zarr_format</span></code> = 2 or 3)</p></li>
 <li><p>Optional auto Dask cluster</p></li>
 </ul>
@@ -507,6 +507,10 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">--channel-inverted</span></code>: channel inversion flags</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">--channel-window-min/max/start/end</span></code>: per-channel windowing values</p></li>
 </ul>
+<p><strong>Axis:</strong>
++* <code class="docutils literal notranslate"><span class="pre">--axes-names</span></code>: comma-separated axis names (metadata only)
++* <code class="docutils literal notranslate"><span class="pre">--axes-types</span></code>: comma-separated axis types (<code class="docutils literal notranslate"><span class="pre">time,channel,space,...</span></code>)
++* <code class="docutils literal notranslate"><span class="pre">--axes-units</span></code>: comma-separated axis units; use <code class="docutils literal notranslate"><span class="pre">none</span></code> or blank for missing</p>
 <section id="examples">
 <h4>Examples<a class="headerlink" href="#examples" title="Link to this heading">¶</a></h4>
 <section id="basic-usage">
@@ -564,6 +568,15 @@
 <span class="w">  </span>--channel-labels<span class="w"> </span>DAPI,GFP,TRITC<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--channel-colors<span class="w"> </span><span class="s2">&quot;#0000FF,#00FF00,#FF0000&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--channel-actives<span class="w"> </span>true,true,false
+</pre></div>
+</div>
+</section>
+<section id="axis-metadata">
+<h5>Axis Metadata<a class="headerlink" href="#axis-metadata" title="Link to this heading">¶</a></h5>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bioio</span><span class="o">-</span><span class="n">convert</span> <span class="n">image_tczyx</span><span class="o">.</span><span class="n">tif</span> <span class="o">-</span><span class="n">d</span> <span class="n">out_axes</span> \
+<span class="o">--</span><span class="n">axes</span><span class="o">-</span><span class="n">names</span> <span class="n">t</span><span class="p">,</span><span class="n">c</span><span class="p">,</span><span class="n">z</span><span class="p">,</span><span class="n">y</span><span class="p">,</span><span class="n">x</span> \
+<span class="o">--</span><span class="n">axes</span><span class="o">-</span><span class="n">types</span> <span class="n">time</span><span class="p">,</span><span class="n">channel</span><span class="p">,</span><span class="n">space</span><span class="p">,</span><span class="n">space</span><span class="p">,</span><span class="n">space</span> \
+<span class="o">--</span><span class="n">axes</span><span class="o">-</span><span class="n">units</span> <span class="n">s</span><span class="p">,,</span><span class="n">um</span><span class="p">,</span><span class="n">um</span><span class="p">,</span><span class="n">um</span>
 </pre></div>
 </div>
 </section>
@@ -716,6 +729,7 @@
 <li><a class="reference internal" href="#id1">Explicit level shapes</a></li>
 <li><a class="reference internal" href="#dtype-and-chunking">Dtype and chunking</a></li>
 <li><a class="reference internal" href="#custom-channels">Custom channels</a></li>
+<li><a class="reference internal" href="#axis-metadata">Axis Metadata</a></li>
 <li><a class="reference internal" href="#physical-pixel-sizes">Physical pixel sizes</a></li>
 </ul>
 </li>
@@ -745,8 +759,8 @@
     </aside>
   </div>
 </div><script src="_static/documentation_options.js?v=01f34227"></script>
-    <script src="_static/doctools.js?v=9bcbadda"></script>
-    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/scripts/furo.js?v=46bd48cc"></script>
     <script src="_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="_static/copybutton.js?v=30646c52"></script>

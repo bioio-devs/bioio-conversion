@@ -4,10 +4,10 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html">
 
-    <!-- Generated with Sphinx 8.2.3 and Furo 2025.09.25 -->
+    <!-- Generated with Sphinx 9.0.4 and Furo 2025.12.19 -->
         <title>bioio_conversion.converters.ome_zarr_converter - bioio-conversion 0.1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
-    <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=580074bf" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo-extensions.css?v=8dab3a3b" />
     
@@ -458,13 +458,28 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_channels</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">axis_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">channel_count</span><span class="p">:</span> <span class="nb">int</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Channel</span><span class="p">]]:</span>
-        <span class="k">if</span> <span class="s2">&quot;c&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">axis_names</span><span class="p">:</span>
-            <span class="k">return</span> <span class="kc">None</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Resolve channel metadata for the writer.</span>
+
+<span class="sd">        Policy:</span>
+<span class="sd">        - If the user explicitly provided channels, always honor them</span>
+<span class="sd">        (even if no &#39;c&#39; axis is present).</span>
+<span class="sd">        - Otherwise, only derive channels if a &#39;c&#39; axis exists.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># 1. User explicitly supplied channels → always use them</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_channels</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_channels</span>
+
+        <span class="c1"># 2. No channel axis → no channels to derive</span>
+        <span class="k">if</span> <span class="s2">&quot;c&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">axis_names</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="c1"># 3. Derive minimal channels from BioImage metadata</span>
         <span class="n">labels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="o">.</span><span class="n">channel_names</span> <span class="ow">or</span> <span class="p">[</span>
             <span class="sa">f</span><span class="s2">&quot;Channel:</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">channel_count</span><span class="p">)</span>
         <span class="p">]</span>
+
         <span class="k">return</span> <span class="p">[</span><span class="n">Channel</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">lab</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;#FFFFFF&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">lab</span> <span class="ow">in</span> <span class="n">labels</span><span class="p">[:</span><span class="n">channel_count</span><span class="p">]]</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_native_axes_and_shape_for_scene</span><span class="p">(</span>
@@ -700,8 +715,8 @@
     </aside>
   </div>
 </div><script src="../../../_static/documentation_options.js?v=01f34227"></script>
-    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
-    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../../../_static/scripts/furo.js?v=46bd48cc"></script>
     <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="../../../_static/copybutton.js?v=30646c52"></script>
