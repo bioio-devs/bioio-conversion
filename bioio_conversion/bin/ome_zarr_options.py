@@ -121,21 +121,19 @@ class IntTupleListType(click.ParamType):
         ctx: Context,
     ) -> List[Tuple[int, ...]]:
         text = str(value).strip()
+
+        if text == "":
+            return []
+
         try:
-            return (
-                []
-                if text == ""
-                else [
-                    tuple(int(x) for x in part.split(",")) for part in text.split(";")
-                ]
-            )
+            return [tuple(int(x) for x in part.split(",")) for part in text.split(";")]
         except Exception:
             self.fail(
                 f"{value!r} is not a valid ';' list of int tuples.",
                 param,
                 ctx,
             )
-            assert False, "unreachable"
+            raise AssertionError("unreachable")
 
 
 class ScenesType(click.ParamType):
@@ -162,7 +160,8 @@ class ScenesType(click.ParamType):
                 param,
                 ctx,
             )
-            assert False, "unreachable"
+            raise AssertionError("unreachable")
+
         return parts[0] if len(parts) == 1 else parts
 
 
