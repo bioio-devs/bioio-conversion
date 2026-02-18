@@ -121,18 +121,18 @@ class IntTupleListType(click.ParamType):
         ctx: Context,
     ) -> List[Tuple[int, ...]]:
         text = str(value).strip()
-
         if text == "":
             return []
 
         try:
             return [tuple(int(x) for x in part.split(",")) for part in text.split(";")]
         except Exception:
-            self.fail(
-                f"{value!r} is not a valid ';' list of int tuples.",
-                param,
-                ctx,
+            message = (
+                f"{value!r} is not a valid list of int tuples separated by "
+                "semicolons. Example: "
+                "'1,1,16,256,256;1,1,16,128,128'."
             )
+            self.fail(message, param, ctx)
             raise AssertionError("unreachable")
 
 
@@ -155,11 +155,11 @@ class ScenesType(click.ParamType):
         try:
             parts = [int(x) for x in text.split(",")]
         except Exception:
-            self.fail(
-                f"{value!r} is not a valid --scenes value (e.g. '0' or '0,2').",
-                param,
-                ctx,
+            message = (
+                f"{value!r} is not a valid --scenes value. Use a single index "
+                "like 0 or a comma-separated list like 0,2."
             )
+            self.fail(message, param, ctx)
             raise AssertionError("unreachable")
 
         return parts[0] if len(parts) == 1 else parts
