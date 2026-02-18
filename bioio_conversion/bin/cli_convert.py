@@ -36,24 +36,14 @@ def main(source: str, **kwargs: dict[str, Any]) -> None:
           --chunk-shape 1,1,16,256,256
     """
     try:
-        # Map Click params → OmeZarrConverter kwargs
         init_opts = build_ome_zarr_init_opts(**kwargs)
-
-        # Execute conversion
         OmeZarrConverter(source=source, **init_opts).convert()
 
-    except FileExistsError as e:
-        # Surface common, expected filesystem issues clearly
-        raise click.ClickException(str(e))
-
     except KeyboardInterrupt:
-        # Clean CTRL+C handling
         raise click.Abort()
 
     except click.ClickException:
-        # Preserve Click's formatted errors
         raise
 
     except Exception as e:
-        # Catch-all safety net with clean CLI formatting
         raise click.ClickException(f"Conversion failed: {e}")

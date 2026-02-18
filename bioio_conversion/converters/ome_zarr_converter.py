@@ -45,8 +45,8 @@ class OmeZarrConverter:
         num_levels: Optional[int] = None,
         downsample_z: bool = False,
         memory_target: Optional[int] = None,
-        start_T_src: Optional[int] = None,
-        start_T_dest: Optional[int] = None,
+        start_t_src: Optional[int] = None,
+        start_t_dest: Optional[int] = None,
         tbatch: Optional[int] = None,
         dtype: Optional[Union[str, np.dtype]] = None,
         auto_dask_cluster: bool = False,
@@ -120,10 +120,10 @@ class OmeZarrConverter:
             If set (bytes), suggests a single chunk shape derived from level-0 shape
             and ``dtype`` via ``chunk_size_from_memory_target``. Writer may reuse or
             adjust per level.
-        start_T_src : Optional[int]
+        start_t_src : Optional[int]
             Source T index at which to begin reading from the BioImage. Default: use
             writer default.
-        start_T_dest : Optional[int]
+        start_t_dest : Optional[int]
             Destination T index at which to begin writing into the store. Default:
             use writer default.
         tbatch : Optional[int]
@@ -185,8 +185,8 @@ class OmeZarrConverter:
         self._helper_memory_target_bytes = (
             None if memory_target is None else memory_target
         )
-        self._start_T_src = start_T_src
-        self._start_T_dest = start_T_dest
+        self._start_t_src = start_t_src
+        self._start_t_dest = start_t_dest
         self._tbatch = None if tbatch is None else tbatch
 
     # -------------------------------------------------------------------------
@@ -422,16 +422,16 @@ class OmeZarrConverter:
 
             # (8) Write
             has_t = "t" in axis_names
-            T_total = int(getattr(r.dims, "T", 1)) if has_t else 1
+            t_total = int(getattr(r.dims, "T", 1)) if has_t else 1
 
-            if has_t and T_total > 1:
+            if has_t and t_total > 1:
                 kwargs: Dict[str, Any] = {"data": data_all}
-                if self._start_T_src is not None:
-                    kwargs["start_T_src"] = self._start_T_src
-                if self._start_T_dest is not None:
-                    kwargs["start_T_dest"] = self._start_T_dest
+                if self._start_t_src is not None:
+                    kwargs["start_T_src"] = self._start_t_src
+                if self._start_t_dest is not None:
+                    kwargs["start_T_dest"] = self._start_t_dest
                 kwargs["total_T"] = (
-                    self._tbatch if self._tbatch is not None else T_total
+                    self._tbatch if self._tbatch is not None else t_total
                 )
                 writer.write_timepoints(**kwargs)
             else:

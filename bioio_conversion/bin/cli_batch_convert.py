@@ -100,34 +100,38 @@ def main(
           --destination out
     """
     try:
-        # Map Click params → OmeZarrConverter kwargs, then coerce to a plain
-        # dict[str, Any] for BatchConverter's type signature.
         init_opts_typed = build_ome_zarr_init_opts(**kwargs)
         default_opts: Dict[str, Any] = dict(init_opts_typed)
 
         bc = BatchConverter(default_opts=default_opts)
 
-        if mode.lower() == "csv":
+        mode_lower = mode.lower()
+        if mode_lower == "csv":
             if csv_file is None:
-                raise click.BadParameter("--csv-file is required in csv mode")
+                raise click.UsageError("--csv-file is required when --mode csv")
             jobs = bc.from_csv(Path(csv_file))
-        elif mode.lower() == "dir":
+
+        elif mode_lower == "dir":
             if directory is None:
-                raise click.BadParameter("--directory is required in dir mode")
-            jobs = bc.from_directory(
-                Path(directory),
-                max_depth=depth,
-                pattern=pattern,
-            )
-        else:
+                raise click.UsageError("--directory/--dir is required when --mode dir")
+            jobs = bc.from_directory(Path(directory), max_depth=depth, pattern=pattern)
+
+        else:  # list
             if not paths:
-                raise click.BadParameter("--paths is required in list mode")
+                raise click.UsageError(
+                    "At least one --paths is required when --mode list"
+                )
             jobs = bc.from_list(list(paths))
 
         click.echo(f"Discovered {len(jobs)} job(s), commencing conversion…")
         bc.run_jobs(jobs)
         click.echo("Batch conversion complete.")
+
+    except KeyboardInterrupt:
+        raise click.Abort()
+
     except click.ClickException:
         raise
+
     except Exception as e:
-        raise click.ClickException(f"Batch conversion failed: {e}")
+        raise click.ClickException(f"Conversion failed: {e}")

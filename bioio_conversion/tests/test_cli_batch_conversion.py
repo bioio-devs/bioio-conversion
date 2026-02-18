@@ -21,15 +21,15 @@ from .conftest import LOCAL_RESOURCES_DIR
         ([], ["Missing option", "--mode"]),
         (
             ["--mode", "list", "--destination", "OUTDIR"],
-            ["--paths is required in list mode"],
+            ["At least one --paths is required when --mode list"],
         ),
         (
             ["--mode", "dir", "--destination", "OUTDIR"],
-            ["--directory is required in dir mode"],
+            ["--directory/--dir is required when --mode dir"],
         ),
         (
             ["--mode", "csv", "--destination", "OUTDIR"],
-            ["--csv-file is required in csv mode"],
+            ["--csv-file is required when --mode csv"],
         ),
     ],
     ids=[
@@ -44,14 +44,11 @@ def test_batch_cli_contract_errors(
     argv: list[str],
     expected_substrings: list[str],
 ) -> None:
-    # Arrange
     runner = CliRunner()
     resolved_argv = [str(tmp_path) if a == "OUTDIR" else a for a in argv]
 
-    # Act
     result = runner.invoke(batch_main, resolved_argv)
 
-    # Assert
     assert result.exit_code != 0, result.output
     for s in expected_substrings:
         assert s in result.output, result.output
@@ -143,12 +140,6 @@ def test_batch_cli_csv_mode(tmp_path: pathlib.Path) -> None:
                     "tbatch": "1",
                 }
             )
-
-    # Clean any existing outputs
-    for fn in ["s_1_t_1_c_1_z_1.ome.tiff", "s_3_t_1_c_3_z_5.ome.tiff"]:
-        out_path = out_dir / f"{pathlib.Path(fn).stem}.ome.zarr"
-        if out_path.exists():
-            shutil.rmtree(out_path)
 
     # Act
     result = runner.invoke(

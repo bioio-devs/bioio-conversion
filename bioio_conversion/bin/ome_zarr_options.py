@@ -31,8 +31,8 @@ class OmeZarrInitOptions(TypedDict, total=False):
     name: str
     scenes: Union[int, List[int]]
     tbatch: int
-    start_T_src: int
-    start_T_dest: int
+    start_t_src: int
+    start_t_dest: int
 
     # pyramid / multiscale
     level_shapes: MultiResolutionShapeSpec
@@ -586,7 +586,7 @@ def ome_zarr_options(
                 default=None,
                 help=(
                     "Source T index at which to begin reading (0-based). Maps "
-                    "to writer.start_T_src."
+                    "to writer.start_t_src."
                 ),
             ),
             click.option(
@@ -595,7 +595,7 @@ def ome_zarr_options(
                 default=None,
                 help=(
                     "Destination T index at which to begin writing (0-based). "
-                    "Maps to writer.start_T_dest."
+                    "Maps to writer.start_t_dest."
                 ),
             ),
             click.option(
@@ -659,12 +659,10 @@ def build_ome_zarr_init_opts(**kwargs: Any) -> OmeZarrInitOptions:
         init_opts["scenes"] = kwargs["scenes"]
     if kwargs.get("tbatch") is not None:
         init_opts["tbatch"] = kwargs["tbatch"]
-
-    # Click uses snake_case; converter uses start_T_* keys
     if kwargs.get("start_t_src") is not None:
-        init_opts["start_T_src"] = kwargs["start_t_src"]
+        init_opts["start_t_src"] = kwargs["start_t_src"]
     if kwargs.get("start_t_dest") is not None:
-        init_opts["start_T_dest"] = kwargs["start_t_dest"]
+        init_opts["start_t_dest"] = kwargs["start_t_dest"]
 
     # Multiscale: explicit level_shapes overrides derived pyramids
     level_shapes = kwargs.get("level_shapes")
