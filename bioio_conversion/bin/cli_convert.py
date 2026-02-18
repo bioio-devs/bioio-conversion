@@ -12,7 +12,7 @@ from .ome_zarr_options import build_ome_zarr_init_opts, ome_zarr_options
     type=click.Path(exists=True),
 )
 @ome_zarr_options(require_destination=True)
-def main(source: str, **kwargs: dict[str, Any]) -> None:
+def main(source: str, **kwargs: Any) -> None:
     """
     Convert a single image file to OME-Zarr.
 
