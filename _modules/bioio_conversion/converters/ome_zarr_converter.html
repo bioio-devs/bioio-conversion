@@ -286,8 +286,8 @@
         <span class="n">num_levels</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">downsample_z</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">memory_target</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">start_T_src</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">start_T_dest</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">start_t_src</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">start_t_dest</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">tbatch</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">auto_dask_cluster</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -361,10 +361,10 @@
 <span class="sd">            If set (bytes), suggests a single chunk shape derived from level-0 shape</span>
 <span class="sd">            and ``dtype`` via ``chunk_size_from_memory_target``. Writer may reuse or</span>
 <span class="sd">            adjust per level.</span>
-<span class="sd">        start_T_src : Optional[int]</span>
+<span class="sd">        start_t_src : Optional[int]</span>
 <span class="sd">            Source T index at which to begin reading from the BioImage. Default: use</span>
 <span class="sd">            writer default.</span>
-<span class="sd">        start_T_dest : Optional[int]</span>
+<span class="sd">        start_t_dest : Optional[int]</span>
 <span class="sd">            Destination T index at which to begin writing into the store. Default:</span>
 <span class="sd">            use writer default.</span>
 <span class="sd">        tbatch : Optional[int]</span>
@@ -426,8 +426,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_helper_memory_target_bytes</span> <span class="o">=</span> <span class="p">(</span>
             <span class="kc">None</span> <span class="k">if</span> <span class="n">memory_target</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">memory_target</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_start_T_src</span> <span class="o">=</span> <span class="n">start_T_src</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_start_T_dest</span> <span class="o">=</span> <span class="n">start_T_dest</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_src</span> <span class="o">=</span> <span class="n">start_t_src</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_dest</span> <span class="o">=</span> <span class="n">start_t_dest</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tbatch</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">tbatch</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">tbatch</span></div>
 
 
@@ -666,16 +666,16 @@
 
             <span class="c1"># (8) Write</span>
             <span class="n">has_t</span> <span class="o">=</span> <span class="s2">&quot;t&quot;</span> <span class="ow">in</span> <span class="n">axis_names</span>
-            <span class="n">T_total</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">dims</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span> <span class="k">if</span> <span class="n">has_t</span> <span class="k">else</span> <span class="mi">1</span>
+            <span class="n">t_total</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">dims</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span> <span class="k">if</span> <span class="n">has_t</span> <span class="k">else</span> <span class="mi">1</span>
 
-            <span class="k">if</span> <span class="n">has_t</span> <span class="ow">and</span> <span class="n">T_total</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">has_t</span> <span class="ow">and</span> <span class="n">t_total</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
                 <span class="n">kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="n">data_all</span><span class="p">}</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_T_src</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;start_T_src&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_T_src</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_T_dest</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;start_T_dest&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_T_dest</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_src</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;start_T_src&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_src</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_dest</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;start_T_dest&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_dest</span>
                 <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;total_T&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">_tbatch</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tbatch</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">T_total</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_tbatch</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tbatch</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">t_total</span>
                 <span class="p">)</span>
                 <span class="n">writer</span><span class="o">.</span><span class="n">write_timepoints</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>

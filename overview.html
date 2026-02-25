@@ -461,144 +461,212 @@
 </section>
 </section>
 <hr class="docutils" />
-<section id="command-line-interface-bioio-convert">
-<h3>Command-Line Interface: <code class="docutils literal notranslate"><span class="pre">bioio-convert</span></code><a class="headerlink" href="#command-line-interface-bioio-convert" title="Link to this heading">¶</a></h3>
-<p>Single-file converter using the configured backend (default: OME-Zarr).</p>
+<section id="command-line-interface">
+<h3>Command-Line Interface<a class="headerlink" href="#command-line-interface" title="Link to this heading">¶</a></h3>
+<section id="bioio-convert-single-file-conversion">
+<h4><code class="docutils literal notranslate"><span class="pre">bioio-convert</span></code> – single-file conversion<a class="headerlink" href="#bioio-convert-single-file-conversion" title="Link to this heading">¶</a></h4>
+<p>Convert a single image file to OME-Zarr using the configured backend
+(default: OME-Zarr).</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>SOURCE<span class="w"> </span>-d<span class="w"> </span>DESTINATION<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
 </pre></div>
 </div>
-<p><strong>Key options:</strong></p>
+<p><code class="docutils literal notranslate"><span class="pre">SOURCE</span></code> is the input image file (e.g. <code class="docutils literal notranslate"><span class="pre">.czi</span></code>, <code class="docutils literal notranslate"><span class="pre">.ome.tiff</span></code>, <code class="docutils literal notranslate"><span class="pre">.nd2</span></code>).</p>
+<p><strong>Core options</strong></p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">source</span></code> (positional): input image path</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">-d</span></code>, <code class="docutils literal notranslate"><span class="pre">--destination</span></code>: output directory for <code class="docutils literal notranslate"><span class="pre">.ome.zarr</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">-n</span></code>, <code class="docutils literal notranslate"><span class="pre">--name</span></code>: base name (defaults to source stem)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">-s</span></code>, <code class="docutils literal notranslate"><span class="pre">--scenes</span></code>: scene(s) to export (<code class="docutils literal notranslate"><span class="pre">0</span></code> by default; comma-separated list; <code class="docutils literal notranslate"><span class="pre">None</span></code> = all scenes)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--tbatch</span></code>: timepoints per write batch (default: <code class="docutils literal notranslate"><span class="pre">1</span></code>)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--start-t-src</span></code>: source T index to begin reading (default: 0)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--start-t-dest</span></code>: destination T index to begin writing (default: 0)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-d</span></code>, <code class="docutils literal notranslate"><span class="pre">--destination</span></code>: output directory for <code class="docutils literal notranslate"><span class="pre">.ome.zarr</span></code> (required)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-n</span></code>, <code class="docutils literal notranslate"><span class="pre">--name</span></code>: base name for the output (defaults to a value derived from
+the input)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-s</span></code>, <code class="docutils literal notranslate"><span class="pre">--scenes</span></code>: scene(s) to export (e.g. <code class="docutils literal notranslate"><span class="pre">0</span></code> or <code class="docutils literal notranslate"><span class="pre">0,2</span></code>). If omitted, the
+converter/writer default is used (“all scenes”).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--tbatch</span></code>: number of timepoints per write batch.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--start-t-src</span></code>: source T index at which to begin reading (0-based).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--start-t-dest</span></code>: destination T index at which to begin writing (0-based).</p></li>
 </ul>
-<p><strong>Multiscale:</strong></p>
+<p><strong>Multiscale (pyramid) options</strong></p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">--level-shapes</span></code>: semicolon-separated absolute shapes (level 0 first)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--num-levels</span></code>: number of pyramid levels (including level 0)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--downsample-z</span></code>: include Z in half-pyramid downsampling</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--level-shapes</span></code>: semicolon-separated per-level shapes (level 0 first).
+Each tuple must have one integer per axis.</p>
+<ul>
+<li><p>Example:
+<code class="docutils literal notranslate"><span class="pre">--level-shapes</span> <span class="pre">&quot;1,3,5,512,512;1,3,5,256,256;1,3,5,128,128&quot;</span></code></p></li>
 </ul>
-<p><strong>Chunking / shards:</strong></p>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--num-levels</span></code>: total number of pyramid levels (including level 0). If
+provided (and <code class="docutils literal notranslate"><span class="pre">--level-shapes</span></code> is not), a half-pyramid is built in X/Y
+(and optionally Z).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--downsample-z</span></code>: when used with <code class="docutils literal notranslate"><span class="pre">--num-levels</span></code>, also halves the Z
+dimension at each level if a Z axis exists.</p></li>
+</ul>
+<p><strong>Chunking / sharding (advanced)</strong></p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">--chunk-shape</span></code>: explicit chunk shape (e.g. <code class="docutils literal notranslate"><span class="pre">1,1,16,256,256</span></code>)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--chunk-shape-per-level</span></code>: semicolon-separated chunk shapes per level</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--memory-target</span></code>: bytes per chunk (default: 16 MB)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--shard-shape</span></code>: shard shape (Zarr v3 only)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--shard-shape-per-level</span></code>: per-level shard shapes (Zarr v3 only)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--chunk-shape</span></code>: single chunk shape tuple applied to all levels
+(e.g. <code class="docutils literal notranslate"><span class="pre">1,1,16,256,256</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--chunk-shape-per-level</span></code>: semicolon-separated chunk shapes per level.
+Overrides <code class="docutils literal notranslate"><span class="pre">--chunk-shape</span></code> and <code class="docutils literal notranslate"><span class="pre">--memory-target</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--memory-target</span></code>: approximate in-memory byte budget used to derive
+per-level chunk shapes when explicit chunk shapes are not provided.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--shard-shape</span></code>: single shard shape tuple for Zarr v3
+(e.g. <code class="docutils literal notranslate"><span class="pre">1,1,128,1024,1024</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--shard-shape-per-level</span></code>: semicolon-separated shard shapes per level
+(Zarr v3). Overrides <code class="docutils literal notranslate"><span class="pre">--shard-shape</span></code>.</p></li>
 </ul>
-<p><strong>Writer / metadata:</strong></p>
+<p><strong>Writer / metadata options</strong></p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">--dtype</span></code>: output dtype override (e.g. <code class="docutils literal notranslate"><span class="pre">uint16</span></code>; default: reader’s dtype)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--physical-pixel-sizes</span></code>: comma-separated floats (per axis, level-0)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--zarr-format</span></code>: <code class="docutils literal notranslate"><span class="pre">2</span></code> (NGFF 0.4) or <code class="docutils literal notranslate"><span class="pre">3</span></code> (NGFF 0.5); default: writer decides</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--dtype</span></code>: output dtype override (e.g. <code class="docutils literal notranslate"><span class="pre">uint16</span></code>, <code class="docutils literal notranslate"><span class="pre">float32</span></code>). If omitted,
+the reader’s native dtype is used.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--physical-pixel-sizes</span></code>: comma-separated floats (one per axis, level 0
+only). Example for <code class="docutils literal notranslate"><span class="pre">(t,c,z,y,x)</span></code>:
+<code class="docutils literal notranslate"><span class="pre">--physical-pixel-sizes</span> <span class="pre">1.0,1.0,0.4,0.108,0.108</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--zarr-format</span></code>: target Zarr version:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">2</span></code> ≈ NGFF 0.4</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">3</span></code> ≈ NGFF 0.5
+If omitted, the writer’s default is used (<code class="docutils literal notranslate"><span class="pre">3</span></code> ≈ NGFF 0.5).</p></li>
 </ul>
-<p><strong>Channels:</strong></p>
+</li>
+</ul>
+<p><strong>Channel display options</strong></p>
+<p>These only take effect when <code class="docutils literal notranslate"><span class="pre">--channel-labels</span></code> is provided. All lists must
+align by channel index.</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">--channel-labels</span></code>: comma-separated channel names</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--channel-colors</span></code>: comma-separated colors (hex or CSS names)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--channel-actives</span></code>: channel visibility flags (<code class="docutils literal notranslate"><span class="pre">true,false,...</span></code>)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--channel-coefficients</span></code>: per-channel coefficient floats</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--channel-families</span></code>: intensity family names (<code class="docutils literal notranslate"><span class="pre">linear,sRGB,...</span></code>)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--channel-inverted</span></code>: channel inversion flags</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--channel-window-min/max/start/end</span></code>: per-channel windowing values</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--channel-labels</span></code>: comma-separated channel names
+(e.g. <code class="docutils literal notranslate"><span class="pre">DAPI,GFP,TRITC</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--channel-colors</span></code>: comma-separated colors (CSS color names or hex codes).
+Example: <code class="docutils literal notranslate"><span class="pre">&quot;#0000FF,#00FF00,#FF0000&quot;</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--channel-actives</span></code>: booleans for channel visibility
+(e.g. <code class="docutils literal notranslate"><span class="pre">true,true,false</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--channel-coefficients</span></code>: per-channel intensity coefficients
+(e.g. <code class="docutils literal notranslate"><span class="pre">1,0.8,1.2</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--channel-families</span></code>: intensity family names per channel
+(e.g. <code class="docutils literal notranslate"><span class="pre">linear,sRGB,sRGB</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--channel-inverted</span></code>: booleans for inverted display per channel.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--channel-window-min</span></code>, <code class="docutils literal notranslate"><span class="pre">--channel-window-max</span></code>,
+<code class="docutils literal notranslate"><span class="pre">--channel-window-start</span></code>, <code class="docutils literal notranslate"><span class="pre">--channel-window-end</span></code>: per-channel windowing
+values. Only used when any window value is provided.</p></li>
 </ul>
-<p><strong>Axis:</strong>
-+* <code class="docutils literal notranslate"><span class="pre">--axes-names</span></code>: comma-separated axis names (metadata only)
-+* <code class="docutils literal notranslate"><span class="pre">--axes-types</span></code>: comma-separated axis types (<code class="docutils literal notranslate"><span class="pre">time,channel,space,...</span></code>)
-+* <code class="docutils literal notranslate"><span class="pre">--axes-units</span></code>: comma-separated axis units; use <code class="docutils literal notranslate"><span class="pre">none</span></code> or blank for missing</p>
-<section id="examples">
-<h4>Examples<a class="headerlink" href="#examples" title="Link to this heading">¶</a></h4>
-<section id="basic-usage">
-<h5>Basic usage<a class="headerlink" href="#basic-usage" title="Link to this heading">¶</a></h5>
+<p><strong>Axis metadata options</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--axes-names</span></code>: comma-separated axis names in native axis order.
+Example: <code class="docutils literal notranslate"><span class="pre">t,c,z,y,x</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--axes-types</span></code>: comma-separated axis semantic types
+(e.g. <code class="docutils literal notranslate"><span class="pre">time,channel,space,space,space</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--axes-units</span></code>: comma-separated axis units, in the same order as
+<code class="docutils literal notranslate"><span class="pre">--axes-names</span></code>. Use <code class="docutils literal notranslate"><span class="pre">none</span></code>, <code class="docutils literal notranslate"><span class="pre">null</span></code>, or a blank position for missing units.
+Example for <code class="docutils literal notranslate"><span class="pre">(t,c,z,y,x)</span></code>:
+<code class="docutils literal notranslate"><span class="pre">s,,um,um,um</span></code>.</p></li>
+</ul>
+</section>
+<section id="bioio-convert-examples">
+<h4><code class="docutils literal notranslate"><span class="pre">bioio-convert</span></code> examples<a class="headerlink" href="#bioio-convert-examples" title="Link to this heading">¶</a></h4>
+<p><strong>Basic usage</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>image.tif<span class="w"> </span>-d<span class="w"> </span>out_dir
 </pre></div>
 </div>
-</section>
-<section id="custom-name">
-<h5>Custom name<a class="headerlink" href="#custom-name" title="Link to this heading">¶</a></h5>
+<p><strong>Custom name</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>sample.czi<span class="w"> </span>-d<span class="w"> </span>out_dir<span class="w"> </span>-n<span class="w"> </span>my_run
 </pre></div>
 </div>
-</section>
-<section id="export-all-scenes">
-<h5>Export all scenes<a class="headerlink" href="#export-all-scenes" title="Link to this heading">¶</a></h5>
+<p><strong>Export all scenes</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>multi_scene.ome.tiff<span class="w"> </span>-d<span class="w"> </span>zarr_out
 </pre></div>
 </div>
-</section>
-<section id="export-specific-scenes">
-<h5>Export specific scenes<a class="headerlink" href="#export-specific-scenes" title="Link to this heading">¶</a></h5>
+<p><strong>Export specific scenes</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>multi_scene.ome.tiff<span class="w"> </span>-d<span class="w"> </span>zarr_out<span class="w"> </span>-s<span class="w"> </span><span class="m">0</span>,2
 </pre></div>
 </div>
-</section>
-<section id="simple-half-pyramid-xy-only">
-<h5>Simple half-pyramid (XY only)<a class="headerlink" href="#simple-half-pyramid-xy-only" title="Link to this heading">¶</a></h5>
+<p><strong>Simple half-pyramid (XY only)</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>volume.tif<span class="w"> </span>-d<span class="w"> </span>out_xy<span class="w"> </span>--num-levels<span class="w"> </span><span class="m">3</span>
 </pre></div>
 </div>
-</section>
-<section id="simple-half-pyramid-xyz">
-<h5>Simple half-pyramid (XYZ)<a class="headerlink" href="#simple-half-pyramid-xyz" title="Link to this heading">¶</a></h5>
+<p><strong>Simple half-pyramid (XYZ)</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>volume_tczyx.tif<span class="w"> </span>-d<span class="w"> </span>out_xyz<span class="w"> </span>--num-levels<span class="w"> </span><span class="m">3</span><span class="w"> </span>--downsample-z
 </pre></div>
 </div>
-</section>
-<section id="id1">
-<h5>Explicit level shapes<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h5>
+<p><strong>Explicit level shapes</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>image.tif<span class="w"> </span>-d<span class="w"> </span>out_explicit<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--level-shapes<span class="w"> </span><span class="s2">&quot;1,3,5,325,475;1,3,2,162,238;1,3,1,81,119&quot;</span>
 </pre></div>
 </div>
-</section>
-<section id="dtype-and-chunking">
-<h5>Dtype and chunking<a class="headerlink" href="#dtype-and-chunking" title="Link to this heading">¶</a></h5>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>image.tif<span class="w"> </span>-d<span class="w"> </span>out_dir<span class="w"> </span>--dtype<span class="w"> </span>uint16<span class="w"> </span>--memory-target<span class="w"> </span><span class="m">33554432</span>
+<p><strong>Dtype and chunking</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>image.tif<span class="w"> </span>-d<span class="w"> </span>out_dir<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--dtype<span class="w"> </span>uint16<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--memory-target<span class="w"> </span><span class="m">33554432</span>
 </pre></div>
 </div>
-</section>
-<section id="custom-channels">
-<h5>Custom channels<a class="headerlink" href="#custom-channels" title="Link to this heading">¶</a></h5>
+<p><strong>Custom channels</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>image_with_channels.czi<span class="w"> </span>-d<span class="w"> </span>out_dir<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--channel-labels<span class="w"> </span>DAPI,GFP,TRITC<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--channel-colors<span class="w"> </span><span class="s2">&quot;#0000FF,#00FF00,#FF0000&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--channel-actives<span class="w"> </span>true,true,false
 </pre></div>
 </div>
-</section>
-<section id="axis-metadata">
-<h5>Axis Metadata<a class="headerlink" href="#axis-metadata" title="Link to this heading">¶</a></h5>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bioio</span><span class="o">-</span><span class="n">convert</span> <span class="n">image_tczyx</span><span class="o">.</span><span class="n">tif</span> <span class="o">-</span><span class="n">d</span> <span class="n">out_axes</span> \
-<span class="o">--</span><span class="n">axes</span><span class="o">-</span><span class="n">names</span> <span class="n">t</span><span class="p">,</span><span class="n">c</span><span class="p">,</span><span class="n">z</span><span class="p">,</span><span class="n">y</span><span class="p">,</span><span class="n">x</span> \
-<span class="o">--</span><span class="n">axes</span><span class="o">-</span><span class="n">types</span> <span class="n">time</span><span class="p">,</span><span class="n">channel</span><span class="p">,</span><span class="n">space</span><span class="p">,</span><span class="n">space</span><span class="p">,</span><span class="n">space</span> \
-<span class="o">--</span><span class="n">axes</span><span class="o">-</span><span class="n">units</span> <span class="n">s</span><span class="p">,,</span><span class="n">um</span><span class="p">,</span><span class="n">um</span><span class="p">,</span><span class="n">um</span>
+<p><strong>Axis metadata</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>image_tczyx.tif<span class="w"> </span>-d<span class="w"> </span>out_axes<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--axes-names<span class="w"> </span>t,c,z,y,x<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--axes-types<span class="w"> </span>time,channel,space,space,space<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--axes-units<span class="w"> </span>s,,um,um,um
 </pre></div>
 </div>
-</section>
-<section id="physical-pixel-sizes">
-<h5>Physical pixel sizes<a class="headerlink" href="#physical-pixel-sizes" title="Link to this heading">¶</a></h5>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>image.tif<span class="w"> </span>-d<span class="w"> </span>out_dir<span class="w"> </span>--physical-pixel-sizes<span class="w"> </span><span class="m">1</span>.0,1.0,0.4,0.108,0.108
+<p><strong>Physical pixel sizes</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>image.tif<span class="w"> </span>-d<span class="w"> </span>out_dir<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--physical-pixel-sizes<span class="w"> </span><span class="m">1</span>.0,1.0,0.4,0.108,0.108
 </pre></div>
 </div>
-</section>
-</section>
 </section>
 <hr class="docutils" />
-<section id="command-line-interface-bioio-batch-convert">
-<h3>Command-Line Interface: <code class="docutils literal notranslate"><span class="pre">bioio-batch-convert</span></code><a class="headerlink" href="#command-line-interface-bioio-batch-convert" title="Link to this heading">¶</a></h3>
-<p>Batch mode: convert many files via CSV, directory walk, or explicit list.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-batch-convert<span class="w"> </span>--mode<span class="w"> </span><span class="o">[</span>csv<span class="p">|</span>dir<span class="p">|</span>list<span class="o">]</span><span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+<section id="bioio-batch-convert-batch-conversion">
+<h4><code class="docutils literal notranslate"><span class="pre">bioio-batch-convert</span></code> – batch conversion<a class="headerlink" href="#bioio-batch-convert-batch-conversion" title="Link to this heading">¶</a></h4>
+<p>Batch mode: convert many files via CSV, directory walk, or an explicit list
+of paths. All of the shared OME-Zarr options listed for <code class="docutils literal notranslate"><span class="pre">bioio-convert</span></code>
+(<code class="docutils literal notranslate"><span class="pre">--num-levels</span></code>, <code class="docutils literal notranslate"><span class="pre">--chunk-shape</span></code>, <code class="docutils literal notranslate"><span class="pre">--channel-*</span></code>, axis metadata, etc.) are
+also accepted here and act as defaults for every job.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-batch-convert<span class="w"> </span>--mode<span class="w"> </span><span class="o">[</span>csv<span class="p">|</span>dir<span class="p">|</span>list<span class="o">]</span><span class="w"> </span><span class="o">[</span>mode<span class="w"> </span>options<span class="o">]</span><span class="w"> </span><span class="o">[</span>shared<span class="w"> </span>options<span class="o">]</span>
 </pre></div>
 </div>
-<section id="id2">
-<h4>Examples<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h4>
-<section id="csv-mode">
-<h5>CSV mode<a class="headerlink" href="#csv-mode" title="Link to this heading">¶</a></h5>
+<p><strong>Mode selection</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">-m</span></code>, <code class="docutils literal notranslate"><span class="pre">--mode</span> <span class="pre">[csv|dir|list]</span></code> (required):</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">csv</span></code>: read jobs from a CSV file.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dir</span></code>: scan a directory tree for input files.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">list</span></code>: use an explicit list of paths from the command line.</p></li>
+</ul>
+</li>
+</ul>
+<p><strong>Mode-specific options</strong></p>
+<ul class="simple">
+<li><p>CSV mode (<code class="docutils literal notranslate"><span class="pre">--mode</span> <span class="pre">csv</span></code>)</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">--csv-file</span></code>: path to a CSV describing jobs (one row per job). Each
+column name maps to an <code class="docutils literal notranslate"><span class="pre">OmeZarrConverter</span></code> init argument (e.g. <code class="docutils literal notranslate"><span class="pre">source</span></code>,
+<code class="docutils literal notranslate"><span class="pre">destination</span></code>, <code class="docutils literal notranslate"><span class="pre">scenes</span></code>, <code class="docutils literal notranslate"><span class="pre">tbatch</span></code>, etc.). Values are parsed by the batch
+loader; per-row values override shared defaults from the CLI.</p></li>
+</ul>
+</li>
+<li><p>Directory mode (<code class="docutils literal notranslate"><span class="pre">--mode</span> <span class="pre">dir</span></code>)</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">--directory</span></code> / <code class="docutils literal notranslate"><span class="pre">--dir</span></code>: root directory to scan.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--depth</span></code>: maximum recursion depth (0 = only top-level files).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--pattern</span></code>: glob pattern used when scanning (e.g. “*.czi”).</p></li>
+</ul>
+</li>
+<li><p>List mode (<code class="docutils literal notranslate"><span class="pre">--mode</span> <span class="pre">list</span></code>)</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">--paths</span></code>: explicit input file paths (repeatable).</p></li>
+</ul>
+</li>
+</ul>
+<p><strong>Shared conversion options</strong></p>
+<p>All of the <code class="docutils literal notranslate"><span class="pre">bioio-convert</span></code> options (destination, multiscale, chunking,
+channels, axes, etc.) can be passed to <code class="docutils literal notranslate"><span class="pre">bioio-batch-convert</span></code>. They are
+converted via <code class="docutils literal notranslate"><span class="pre">build_ome_zarr_init_opts(...)</span></code> and applied as defaults to
+every job created by the <code class="docutils literal notranslate"><span class="pre">BatchConverter</span></code>. CSV columns that match a given
+argument override the shared defaults on a per-job basis.</p>
+</section>
+<section id="bioio-batch-convert-examples">
+<h4><code class="docutils literal notranslate"><span class="pre">bioio-batch-convert</span></code> examples<a class="headerlink" href="#bioio-batch-convert-examples" title="Link to this heading">¶</a></h4>
+<p><strong>CSV mode</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-batch-convert<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--mode<span class="w"> </span>csv<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--csv-file<span class="w"> </span>jobs.csv<span class="w"> </span><span class="se">\</span>
@@ -608,9 +676,7 @@
 <span class="w">  </span>--num-levels<span class="w"> </span><span class="m">3</span>
 </pre></div>
 </div>
-</section>
-<section id="directory-mode">
-<h5>Directory mode<a class="headerlink" href="#directory-mode" title="Link to this heading">¶</a></h5>
+<p><strong>Directory mode</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-batch-convert<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--mode<span class="w"> </span>dir<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--directory<span class="w"> </span>data/<span class="w"> </span><span class="se">\</span>
@@ -620,18 +686,16 @@
 <span class="w">  </span>--level-shapes<span class="w"> </span><span class="s2">&quot;1,3,5,325,475;1,3,2,162,238;1,3,1,81,119&quot;</span>
 </pre></div>
 </div>
-</section>
-<section id="list-mode">
-<h5>List mode<a class="headerlink" href="#list-mode" title="Link to this heading">¶</a></h5>
+<p><strong>List mode</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-batch-convert<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--mode<span class="w"> </span>list<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--paths<span class="w"> </span>a.czi<span class="w"> </span>b.czi<span class="w"> </span>c.tiff<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--destination<span class="w"> </span>list_out<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--name<span class="w"> </span>batch_run<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--num-levels<span class="w"> </span><span class="m">2</span><span class="w"> </span>--downsample-z
+<span class="w">  </span>--num-levels<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--downsample-z
 </pre></div>
 </div>
-</section>
 </section>
 </section>
 <hr class="docutils" />
@@ -718,30 +782,11 @@
 <li><a class="reference internal" href="#list-driven-batch-conversion">List-driven batch conversion</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#command-line-interface-bioio-convert">Command-Line Interface: <code class="docutils literal notranslate"><span class="pre">bioio-convert</span></code></a><ul>
-<li><a class="reference internal" href="#examples">Examples</a><ul>
-<li><a class="reference internal" href="#basic-usage">Basic usage</a></li>
-<li><a class="reference internal" href="#custom-name">Custom name</a></li>
-<li><a class="reference internal" href="#export-all-scenes">Export all scenes</a></li>
-<li><a class="reference internal" href="#export-specific-scenes">Export specific scenes</a></li>
-<li><a class="reference internal" href="#simple-half-pyramid-xy-only">Simple half-pyramid (XY only)</a></li>
-<li><a class="reference internal" href="#simple-half-pyramid-xyz">Simple half-pyramid (XYZ)</a></li>
-<li><a class="reference internal" href="#id1">Explicit level shapes</a></li>
-<li><a class="reference internal" href="#dtype-and-chunking">Dtype and chunking</a></li>
-<li><a class="reference internal" href="#custom-channels">Custom channels</a></li>
-<li><a class="reference internal" href="#axis-metadata">Axis Metadata</a></li>
-<li><a class="reference internal" href="#physical-pixel-sizes">Physical pixel sizes</a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li><a class="reference internal" href="#command-line-interface-bioio-batch-convert">Command-Line Interface: <code class="docutils literal notranslate"><span class="pre">bioio-batch-convert</span></code></a><ul>
-<li><a class="reference internal" href="#id2">Examples</a><ul>
-<li><a class="reference internal" href="#csv-mode">CSV mode</a></li>
-<li><a class="reference internal" href="#directory-mode">Directory mode</a></li>
-<li><a class="reference internal" href="#list-mode">List mode</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#command-line-interface">Command-Line Interface</a><ul>
+<li><a class="reference internal" href="#bioio-convert-single-file-conversion"><code class="docutils literal notranslate"><span class="pre">bioio-convert</span></code> – single-file conversion</a></li>
+<li><a class="reference internal" href="#bioio-convert-examples"><code class="docutils literal notranslate"><span class="pre">bioio-convert</span></code> examples</a></li>
+<li><a class="reference internal" href="#bioio-batch-convert-batch-conversion"><code class="docutils literal notranslate"><span class="pre">bioio-batch-convert</span></code> – batch conversion</a></li>
+<li><a class="reference internal" href="#bioio-batch-convert-examples"><code class="docutils literal notranslate"><span class="pre">bioio-batch-convert</span></code> examples</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#license-issues">License &amp; Issues</a></li>
