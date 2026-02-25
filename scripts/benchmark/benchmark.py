@@ -99,7 +99,7 @@ def _writer_kwargs_from_run(run: Dict[str, Any]) -> Dict[str, Any]:
         kw["dtype"] = str(kw["dtype"])
 
     # numeric-ish args
-    for key in ("memory_target", "tbatch", "start_T_src", "start_T_dest", "zarr_format"):
+    for key in ("memory_target", "tbatch", "start_t_src", "start_t_dest", "zarr_format"):
         if key in kw and kw[key] is not None:
             kw[key] = int(kw[key])
 

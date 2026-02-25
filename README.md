@@ -216,111 +216,155 @@ bc.run_jobs(jobs)
 
 ---
 
-## Command-Line Interface: `bioio-convert`
+## Command-Line Interface
 
-Single-file converter using the configured backend (default: OME-Zarr).
+### `bioio-convert` – single-file conversion
+
+Convert a single image file to OME-Zarr using the configured backend
+(default: OME-Zarr).
 
 ```bash
 bioio-convert SOURCE -d DESTINATION [options]
 ```
 
-**Key options:**
+`SOURCE` is the input image file (e.g. `.czi`, `.ome.tiff`, `.nd2`).
+
+**Core options**
 
 * `source` (positional): input image path
-* `-d`, `--destination`: output directory for `.ome.zarr`
-* `-n`, `--name`: base name (defaults to source stem)
-* `-s`, `--scenes`: scene(s) to export (`0` by default; comma-separated list; `None` = all scenes)
-* `--tbatch`: timepoints per write batch (default: `1`)
-* `--start-t-src`: source T index to begin reading (default: 0)
-* `--start-t-dest`: destination T index to begin writing (default: 0)
+* `-d`, `--destination`: output directory for `.ome.zarr` (required)
+* `-n`, `--name`: base name for the output (defaults to a value derived from
+  the input)
+* `-s`, `--scenes`: scene(s) to export (e.g. `0` or `0,2`). If omitted, the
+  converter/writer default is used (“all scenes”).
+* `--tbatch`: number of timepoints per write batch.
+* `--start-t-src`: source T index at which to begin reading (0-based).
+* `--start-t-dest`: destination T index at which to begin writing (0-based).
 
-**Multiscale:**
+**Multiscale (pyramid) options**
 
-* `--level-shapes`: semicolon-separated absolute shapes (level 0 first)
-* `--num-levels`: number of pyramid levels (including level 0)
-* `--downsample-z`: include Z in half-pyramid downsampling
+* `--level-shapes`: semicolon-separated per-level shapes (level 0 first).
+  Each tuple must have one integer per axis.
 
-**Chunking / shards:**
+  * Example:
+    `--level-shapes "1,3,5,512,512;1,3,5,256,256;1,3,5,128,128"`
+* `--num-levels`: total number of pyramid levels (including level 0). If
+  provided (and `--level-shapes` is not), a half-pyramid is built in X/Y
+  (and optionally Z).
+* `--downsample-z`: when used with `--num-levels`, also halves the Z
+  dimension at each level if a Z axis exists.
 
-* `--chunk-shape`: explicit chunk shape (e.g. `1,1,16,256,256`)
-* `--chunk-shape-per-level`: semicolon-separated chunk shapes per level
-* `--memory-target`: bytes per chunk (default: 16 MB)
-* `--shard-shape`: shard shape (Zarr v3 only)
-* `--shard-shape-per-level`: per-level shard shapes (Zarr v3 only)
+**Chunking / sharding (advanced)**
 
-**Writer / metadata:**
+* `--chunk-shape`: single chunk shape tuple applied to all levels
+  (e.g. `1,1,16,256,256`).
+* `--chunk-shape-per-level`: semicolon-separated chunk shapes per level.
+  Overrides `--chunk-shape` and `--memory-target`.
+* `--memory-target`: approximate in-memory byte budget used to derive
+  per-level chunk shapes when explicit chunk shapes are not provided.
+* `--shard-shape`: single shard shape tuple for Zarr v3
+  (e.g. `1,1,128,1024,1024`).
+* `--shard-shape-per-level`: semicolon-separated shard shapes per level
+  (Zarr v3). Overrides `--shard-shape`.
 
-* `--dtype`: output dtype override (e.g. `uint16`; default: reader’s dtype)
-* `--physical-pixel-sizes`: comma-separated floats (per axis, level-0)
-* `--zarr-format`: `2` (NGFF 0.4) or `3` (NGFF 0.5); default: writer decides
+**Writer / metadata options**
 
-**Channels:**
+* `--dtype`: output dtype override (e.g. `uint16`, `float32`). If omitted,
+  the reader’s native dtype is used.
+* `--physical-pixel-sizes`: comma-separated floats (one per axis, level 0
+  only). Example for `(t,c,z,y,x)`:
+  `--physical-pixel-sizes 1.0,1.0,0.4,0.108,0.108`
+* `--zarr-format`: target Zarr version:
+
+  * `2` ≈ NGFF 0.4
+  * `3` ≈ NGFF 0.5
+    If omitted, the writer’s default is used (`3` ≈ NGFF 0.5).
+
+**Channel display options**
+
+These only take effect when `--channel-labels` is provided. All lists must
+align by channel index.
 
 * `--channel-labels`: comma-separated channel names
-* `--channel-colors`: comma-separated colors (hex or CSS names)
-* `--channel-actives`: channel visibility flags (`true,false,...`)
-* `--channel-coefficients`: per-channel coefficient floats
-* `--channel-families`: intensity family names (`linear,sRGB,...`)
-* `--channel-inverted`: channel inversion flags
-* `--channel-window-min/max/start/end`: per-channel windowing values
+  (e.g. `DAPI,GFP,TRITC`).
+* `--channel-colors`: comma-separated colors (CSS color names or hex codes).
+  Example: `"#0000FF,#00FF00,#FF0000"`.
+* `--channel-actives`: booleans for channel visibility
+  (e.g. `true,true,false`).
+* `--channel-coefficients`: per-channel intensity coefficients
+  (e.g. `1,0.8,1.2`).
+* `--channel-families`: intensity family names per channel
+  (e.g. `linear,sRGB,sRGB`).
+* `--channel-inverted`: booleans for inverted display per channel.
+* `--channel-window-min`, `--channel-window-max`,
+  `--channel-window-start`, `--channel-window-end`: per-channel windowing
+  values. Only used when any window value is provided.
 
-**Axis:**
-+* `--axes-names`: comma-separated axis names (metadata only)
-+* `--axes-types`: comma-separated axis types (`time,channel,space,...`)
-+* `--axes-units`: comma-separated axis units; use `none` or blank for missing
+**Axis metadata options**
 
-### Examples
+* `--axes-names`: comma-separated axis names in native axis order.
+  Example: `t,c,z,y,x`.
+* `--axes-types`: comma-separated axis semantic types
+  (e.g. `time,channel,space,space,space`).
+* `--axes-units`: comma-separated axis units, in the same order as
+  `--axes-names`. Use `none`, `null`, or a blank position for missing units.
+  Example for `(t,c,z,y,x)`:
+  `s,,um,um,um`.
 
-#### Basic usage
+### `bioio-convert` examples
+
+**Basic usage**
 
 ```bash
 bioio-convert image.tif -d out_dir
 ```
 
-#### Custom name
+**Custom name**
 
 ```bash
 bioio-convert sample.czi -d out_dir -n my_run
 ```
 
-#### Export all scenes
+**Export all scenes**
 
 ```bash
 bioio-convert multi_scene.ome.tiff -d zarr_out
 ```
 
-#### Export specific scenes
+**Export specific scenes**
 
 ```bash
 bioio-convert multi_scene.ome.tiff -d zarr_out -s 0,2
 ```
 
-#### Simple half-pyramid (XY only)
+**Simple half-pyramid (XY only)**
 
 ```bash
 bioio-convert volume.tif -d out_xy --num-levels 3
 ```
 
-#### Simple half-pyramid (XYZ)
+**Simple half-pyramid (XYZ)**
 
 ```bash
 bioio-convert volume_tczyx.tif -d out_xyz --num-levels 3 --downsample-z
 ```
 
-#### Explicit level shapes
+**Explicit level shapes**
 
 ```bash
 bioio-convert image.tif -d out_explicit \
   --level-shapes "1,3,5,325,475;1,3,2,162,238;1,3,1,81,119"
 ```
 
-#### Dtype and chunking
+**Dtype and chunking**
 
 ```bash
-bioio-convert image.tif -d out_dir --dtype uint16 --memory-target 33554432
+bioio-convert image.tif -d out_dir \
+  --dtype uint16 \
+  --memory-target 33554432
 ```
 
-#### Custom channels
+**Custom channels**
 
 ```bash
 bioio-convert image_with_channels.czi -d out_dir \
@@ -329,33 +373,73 @@ bioio-convert image_with_channels.czi -d out_dir \
   --channel-actives true,true,false
 ```
 
-#### Axis Metadata
-```
-bioio-convert image_tczyx.tif -d out_axes \
---axes-names t,c,z,y,x \
---axes-types time,channel,space,space,space \
---axes-units s,,um,um,um
-```
-
-#### Physical pixel sizes
+**Axis metadata**
 
 ```bash
-bioio-convert image.tif -d out_dir --physical-pixel-sizes 1.0,1.0,0.4,0.108,0.108
+bioio-convert image_tczyx.tif -d out_axes \
+  --axes-names t,c,z,y,x \
+  --axes-types time,channel,space,space,space \
+  --axes-units s,,um,um,um
+```
+
+**Physical pixel sizes**
+
+```bash
+bioio-convert image.tif -d out_dir \
+  --physical-pixel-sizes 1.0,1.0,0.4,0.108,0.108
 ```
 
 ---
 
-## Command-Line Interface: `bioio-batch-convert`
+### `bioio-batch-convert` – batch conversion
 
-Batch mode: convert many files via CSV, directory walk, or explicit list.
+Batch mode: convert many files via CSV, directory walk, or an explicit list
+of paths. All of the shared OME-Zarr options listed for `bioio-convert`
+(`--num-levels`, `--chunk-shape`, `--channel-*`, axis metadata, etc.) are
+also accepted here and act as defaults for every job.
 
 ```bash
-bioio-batch-convert --mode [csv|dir|list] [options]
+bioio-batch-convert --mode [csv|dir|list] [mode options] [shared options]
 ```
 
-### Examples
+**Mode selection**
 
-#### CSV mode
+* `-m`, `--mode [csv|dir|list]` (required):
+
+  * `csv`: read jobs from a CSV file.
+  * `dir`: scan a directory tree for input files.
+  * `list`: use an explicit list of paths from the command line.
+
+**Mode-specific options**
+
+* CSV mode (`--mode csv`)
+
+  * `--csv-file`: path to a CSV describing jobs (one row per job). Each
+    column name maps to an `OmeZarrConverter` init argument (e.g. `source`,
+    `destination`, `scenes`, `tbatch`, etc.). Values are parsed by the batch
+    loader; per-row values override shared defaults from the CLI.
+
+* Directory mode (`--mode dir`)
+
+  * `--directory` / `--dir`: root directory to scan.
+  * `--depth`: maximum recursion depth (0 = only top-level files).
+  * `--pattern`: glob pattern used when scanning (e.g. "*.czi").
+
+* List mode (`--mode list`)
+
+  * `--paths`: explicit input file paths (repeatable).
+
+**Shared conversion options**
+
+All of the `bioio-convert` options (destination, multiscale, chunking,
+channels, axes, etc.) can be passed to `bioio-batch-convert`. They are
+converted via `build_ome_zarr_init_opts(...)` and applied as defaults to
+every job created by the `BatchConverter`. CSV columns that match a given
+argument override the shared defaults on a per-job basis.
+
+### `bioio-batch-convert` examples
+
+**CSV mode**
 
 ```bash
 bioio-batch-convert \
@@ -367,7 +451,7 @@ bioio-batch-convert \
   --num-levels 3
 ```
 
-#### Directory mode
+**Directory mode**
 
 ```bash
 bioio-batch-convert \
@@ -379,7 +463,7 @@ bioio-batch-convert \
   --level-shapes "1,3,5,325,475;1,3,2,162,238;1,3,1,81,119"
 ```
 
-#### List mode
+**List mode**
 
 ```bash
 bioio-batch-convert \
@@ -387,9 +471,9 @@ bioio-batch-convert \
   --paths a.czi b.czi c.tiff \
   --destination list_out \
   --name batch_run \
-  --num-levels 2 --downsample-z
+  --num-levels 2 \
+  --downsample-z
 ```
-
 ---
 
 ## License & Issues
