@@ -425,14 +425,16 @@ class OmeZarrConverter:
             t_total = int(getattr(r.dims, "T", 1)) if has_t else 1
 
             if has_t and t_total > 1:
-                kwargs: Dict[str, Any] = {"data": data_all}
-                if self._start_t_src is not None:
-                    kwargs["start_T_src"] = self._start_t_src
-                if self._start_t_dest is not None:
-                    kwargs["start_T_dest"] = self._start_t_dest
-                kwargs["total_T"] = (
-                    self._tbatch if self._tbatch is not None else t_total
-                )
-                writer.write_timepoints(**kwargs)
+                base_t_src = self._start_t_src or 0
+                base_t_dest = self._start_t_dest or 0
+                batch_size = self._tbatch or t_total
+                for i in range(0, t_total, batch_size):
+                    batch = min(batch_size, t_total - i)
+                    writer.write_timepoints(
+                        data=data_all,
+                        start_T_src=base_t_src + i,
+                        start_T_dest=base_t_dest + i,
+                        total_T=batch,
+                    )
             else:
                 writer.write_full_volume(data_all)
