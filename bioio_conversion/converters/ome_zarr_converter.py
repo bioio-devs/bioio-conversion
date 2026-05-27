@@ -428,12 +428,17 @@ class OmeZarrConverter:
                 base_t_src = self._start_t_src or 0
                 base_t_dest = self._start_t_dest or 0
                 batch_size = self._tbatch or t_total
+                # find which axis index is T once (e.g. axis 0 in "TCYX")
+                t_axis = list(native_order).index("T")
                 for i in range(0, t_total, batch_size):
                     batch = min(batch_size, t_total - i)
+                    # pre-slice to this batch window so the writer only holds
+                    # the dask graph for these frames, not the full array
+                    slices = [slice(None)] * data_all.ndim
+                    slices[t_axis] = slice(base_t_src + i, base_t_src + i + batch)
                     writer.write_timepoints(
-                        data=data_all,
-                        start_T_src=base_t_src + i,
-                        start_T_dest=base_t_dest + i,
+                        data=data_all[tuple(slices)],
+                        start_T_dest=base_t_dest + i,  # advance destination each batch
                         total_T=batch,
                     )
             else:
