@@ -50,7 +50,9 @@ def choose_zarr_layout(
     T, C, Z, Y, X = tczyx_shape
 
     # ------------------------------------------------------------------
-    # Determine chunk shape
+    # Determine chunk shape.
+    # Chunk shape is designed around a viewer's access pattern of
+    # whole Z slices at a single channel at a single timepoint.
     # ------------------------------------------------------------------
 
     bytes_per_slice = Y * X * dtype_size
@@ -76,6 +78,8 @@ def choose_zarr_layout(
 
     # ------------------------------------------------------------------
     # Determine shard shape
+    # Shard shape is designed around simply packing as many chunks as
+    # possible into each shard, up to some size limit.
     # ------------------------------------------------------------------
 
     max_chunks_per_shard = max(
