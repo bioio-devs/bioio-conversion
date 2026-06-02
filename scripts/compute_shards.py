@@ -1,25 +1,63 @@
 from math import floor
 
+_ALLOWED_DIMS = ("T", "C", "Z", "Y", "X")
+
+
+def _validate_dims(dims: str, shape: tuple[int, ...]) -> None:
+    if len(dims) != len(shape):
+        raise ValueError(
+            f"dims {dims!r} length does not match shape length {len(shape)}."
+        )
+    if not (2 <= len(dims) <= 5):
+        raise ValueError(f"dims must have 2 to 5 entries, got {dims!r}.")
+    if dims[-2:] != "YX":
+        raise ValueError(f"Last two dims must be 'YX', got {dims!r}.")
+    leading = dims[:-2]
+    if any(d not in {"T", "C", "Z"} for d in leading):
+        raise ValueError(f"Leading dims must be from {{T, C, Z}}, got {dims!r}.")
+    if len(set(leading)) != len(leading):
+        raise ValueError(f"Duplicate dims in {dims!r}.")
+
+
+def _expand_to_tczyx(
+    dims: str, shape: tuple[int, ...]
+) -> tuple[int, int, int, int, int]:
+    """Expand an arbitrary (2D-5D) shape with dims label to full TCZYX."""
+    mapping = dict(zip(dims, shape))
+    return tuple(mapping.get(d, 1) for d in _ALLOWED_DIMS)  # type: ignore[return-value]
+
+
+def _contract_from_tczyx(
+    dims: str, tczyx_shape: tuple[int, int, int, int, int]
+) -> tuple[int, ...]:
+    """Project a TCZYX-ordered shape down to the user's dims order."""
+    full = dict(zip(_ALLOWED_DIMS, tczyx_shape))
+    return tuple(full[d] for d in dims)
+
 
 def choose_zarr_layout(
-    tczyx_shape: tuple[int, int, int, int, int],
+    shape: tuple[int, ...],
     dtype_size: int,
+    dims: str = "TCZYX",
     chunk_limit_bytes: int = 16 * 1024**2,
     shard_limit_bytes: int = 2 * 1024**3,
-) -> tuple[
-    tuple[int, int, int, int, int],
-    tuple[int, int, int, int, int],
-]:
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
     """
-    Compute chunk and shard shapes for a TCZYX image.
+    Compute chunk and shard shapes for a 2D-5D image.
 
     Parameters
     ----------
-    tczyx_shape
-        (T, C, Z, Y, X)
+    shape
+        Image shape, length 2 to 5, matching ``dims``.
 
     dtype_size
         Number of bytes per voxel.
+
+    dims
+        Dimension labels for ``shape``. Must end in ``"YX"`` and the
+        leading dims must be a subset of ``{"T", "C", "Z"}`` in any
+        order. Examples: ``"YX"``, ``"ZYX"``, ``"CYX"``, ``"CZYX"``,
+        ``"TCZYX"``.
 
     chunk_limit_bytes
         Maximum uncompressed chunk size.
@@ -30,10 +68,10 @@ def choose_zarr_layout(
     Returns
     -------
     chunk_shape
-        (T, C, Z, Y, X)
+        Same length and order as ``shape``.
 
     shard_shape
-        (T, C, Z, Y, X)
+        Same length and order as ``shape``.
 
     Notes
     -----
@@ -47,7 +85,9 @@ def choose_zarr_layout(
     - Shards are grown preferentially along Z, then C, then T.
     """
 
-    T, C, Z, Y, X = tczyx_shape
+    _validate_dims(dims, shape)
+
+    T, C, Z, Y, X = _expand_to_tczyx(dims, shape)
 
     # ------------------------------------------------------------------
     # Determine chunk shape.
@@ -66,13 +106,7 @@ def choose_zarr_layout(
     z_chunk = chunk_limit_bytes // bytes_per_slice
     z_chunk = max(1, min(Z, z_chunk))
 
-    chunk_shape = (
-        1,
-        1,
-        z_chunk,
-        Y,
-        X,
-    )
+    chunk_tczyx = (1, 1, z_chunk, Y, X)
 
     chunk_bytes = z_chunk * bytes_per_slice
 
@@ -133,13 +167,16 @@ def choose_zarr_layout(
     shard_t = max(1, max_t)
     chunks_used *= shard_t
 
-    shard_shape = (
+    shard_tczyx = (
         shard_t,
         shard_c,
         shard_z_chunks * z_chunk,
         Y,
         X,
     )
+
+    chunk_shape = _contract_from_tczyx(dims, chunk_tczyx)
+    shard_shape = _contract_from_tczyx(dims, shard_tczyx)
 
     return chunk_shape, shard_shape
 
@@ -149,72 +186,91 @@ if __name__ == "__main__":
     chunk_limit = 16 * 1024**2  # 16 MiB
     shard_limit = 4 * 1024**3  # 4 GiB
 
-    shape = (100, 4, 100, 1500, 2500)
-    T, C, Z, Y, X = shape
-
     atlas_size = 2048
 
-    total_chunks = 0
-    total_shards = 0
+    examples = [
+        ("YX", (1500, 2500)),
+        ("ZYX", (1000, 1500, 2500)),
+        ("CYX", (4, 1500, 2500)),
+        ("CZYX", (4, 1000, 1500, 2500)),
+        ("TCZYX", (100, 4, 1000, 1500, 2500)),
+    ]
 
-    level = 0
-    while True:
-        current_shape = (T, C, Z, Y, X)
-        chunk_shape, shard_shape = choose_zarr_layout(
-            tczyx_shape=current_shape,
-            dtype_size=dtype_size,
-            chunk_limit_bytes=chunk_limit,
-            shard_limit_bytes=shard_limit,
-        )
+    for dims, shape in examples:
+        print(f"=== dims={dims} shape={shape} ===")
 
-        chunk_bytes = dtype_size
-        for d in chunk_shape:
-            chunk_bytes *= d
+        sizes = dict(zip(dims, shape))
+        T = sizes.get("T", 1)
+        C = sizes.get("C", 1)
+        Z = sizes.get("Z", 1)
+        Y = sizes["Y"]
+        X = sizes["X"]
 
-        shard_bytes = dtype_size
-        for d in shard_shape:
-            shard_bytes *= d
+        total_chunks = 0
+        total_shards = 0
 
-        n_chunks = 1
-        for dim, c in zip(current_shape, chunk_shape):
-            n_chunks *= (dim + c - 1) // c
+        level = 0
+        while True:
+            current_full = (T, C, Z, Y, X)
+            current_shape = _contract_from_tczyx(dims, current_full)
 
-        n_shards = 1
-        for dim, s in zip(current_shape, shard_shape):
-            n_shards *= (dim + s - 1) // s
+            chunk_shape, shard_shape = choose_zarr_layout(
+                shape=current_shape,
+                dtype_size=dtype_size,
+                dims=dims,
+                chunk_limit_bytes=chunk_limit,
+                shard_limit_bytes=shard_limit,
+            )
 
-        total_chunks += n_chunks
-        total_shards += n_shards
+            chunk_bytes = dtype_size
+            for d in chunk_shape:
+                chunk_bytes *= d
 
-        tiles_x = atlas_size // X if X <= atlas_size else 0
-        tiles_y = atlas_size // Y if Y <= atlas_size else 0
-        fits_atlas = tiles_x * tiles_y >= Z
+            shard_bytes = dtype_size
+            for d in shard_shape:
+                shard_bytes *= d
 
-        print(f"level {level}:")
-        print(f"  shape:        {current_shape}")
-        print(f"  chunk_shape:  {chunk_shape}  ({chunk_bytes:,} bytes)")
-        print(f"  shard_shape:  {shard_shape}  ({shard_bytes:,} bytes)")
-        print(f"  n_chunks:     {n_chunks:,}")
-        print(f"  n_shards:     {n_shards:,}")
-        print(
-            f"  atlas tiles:  {tiles_x} x {tiles_y} = {tiles_x * tiles_y} "
-            f"(need {Z}, fits={fits_atlas})"
-        )
+            n_chunks = 1
+            for dim, c in zip(current_shape, chunk_shape):
+                n_chunks *= (dim + c - 1) // c
 
-        # Stop once Z slices of size (Y, X) tile into a 2048x2048 atlas.
-        if fits_atlas:
-            break
+            n_shards = 1
+            for dim, s in zip(current_shape, shard_shape):
+                n_shards *= (dim + s - 1) // s
 
-        # Downsample XY by half until one of X or Y is less than Z,
-        # then downsample Z by half.
-        if min(X, Y) >= Z:
-            X = max(1, X // 2)
-            Y = max(1, Y // 2)
-        else:
-            Z = max(1, Z // 2)
+            total_chunks += n_chunks
+            total_shards += n_shards
 
-        level += 1
+            tiles_x = atlas_size // X if X <= atlas_size else 0
+            tiles_y = atlas_size // Y if Y <= atlas_size else 0
+            fits_atlas = tiles_x * tiles_y >= Z
 
-    print()
-    print(f"total chunks across all levels: {total_chunks:,}")
-    print(f"total shards across all levels: {total_shards:,}")
+            print(f"level {level}:")
+            print(f"  shape:        {current_shape}")
+            print(f"  chunk_shape:  {chunk_shape}  ({chunk_bytes:,} bytes)")
+            print(f"  shard_shape:  {shard_shape}  ({shard_bytes:,} bytes)")
+            print(f"  n_chunks:     {n_chunks:,}")
+            print(f"  n_shards:     {n_shards:,}")
+            print(
+                f"  atlas tiles:  {tiles_x} x {tiles_y} = "
+                f"{tiles_x * tiles_y} (need {Z}, fits={fits_atlas})"
+            )
+
+            # Stop once Z slices of size (Y, X) tile into the atlas.
+            if fits_atlas:
+                break
+
+            # Downsample only spatial dims (Z, Y, X). Never T or C.
+            # Halve XY until one of X or Y is below Z, then halve Z.
+            if min(X, Y) >= Z:
+                X = max(1, X // 2)
+                Y = max(1, Y // 2)
+            else:
+                Z = max(1, Z // 2)
+
+            level += 1
+
+        print()
+        print(f"total chunks across all levels: {total_chunks:,}")
+        print(f"total shards across all levels: {total_shards:,}")
+        print()
