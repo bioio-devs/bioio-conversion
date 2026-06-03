@@ -140,8 +140,9 @@ class OmeZarrConverter:
         dtype : Optional[Union[str, np.dtype]]
             Override output data type; defaults to the reader’s dtype.
         auto_dask_cluster : bool
-            If ``True``, spin up a local Dask cluster with 8 workers before
-            conversion begins.
+            If True, automatically spin up a local Dask cluster with
+            8 workers (using `Cluster(n_workers=8).start()`) before any
+            conv
         """
         self.source = source
         self.destination = destination or str(Path.cwd())
