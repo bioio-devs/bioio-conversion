@@ -511,10 +511,10 @@ def test_pyramid_layout(dims: str, levels: list) -> None:
 
         assert (
             chunk_bytes <= _16MiB
-        ), f"level {i}: chunk {chunk_bytes:,} B exceeds {_16MiB:,} B limit"
+        ), f"level {i}: chunk {chunk_bytes:,} B exceeds {_16MiB:,} B limit"  # noqa
         assert (
             shard_bytes <= _4GiB
-        ), f"level {i}: shard {shard_bytes:,} B exceeds {_4GiB:,} B limit"
+        ), f"level {i}: shard {shard_bytes:,} B exceeds {_4GiB:,} B limit"  # noqa
 
         assert (
             _atlas_fits(lvl_shape, dims) == exp_fits
