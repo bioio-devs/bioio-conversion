@@ -1,5 +1,8 @@
+import itertools
+import math
 import re
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -52,6 +55,7 @@ class OmeZarrConverter:
         tbatch: Optional[int] = None,
         dtype: Optional[Union[str, np.dtype]] = None,
         auto_dask_cluster: bool = False,
+        max_write_workers: Optional[int] = None,
     ) -> None:
         """
         Initialize an OME-Zarr converter with flexible scene selection,
@@ -143,6 +147,14 @@ class OmeZarrConverter:
             If True, automatically spin up a local Dask cluster with
             8 workers (using `Cluster(n_workers=8).start()`) before any
             conv
+        max_write_workers : Optional[int]
+            When set, write data via parallel shard-aligned
+            ``write_region(lock=False)`` calls using a thread pool of this
+            size rather than ``write_full_volume`` / ``write_timepoints``.
+            Each call writes exactly one shard at every pyramid level with
+            no read-modify-write, enabling safe concurrent writes.  Requires
+            ``zarr_format=3`` with proportional shards.  Ignored when
+            ``start_t_src`` or ``start_t_dest`` is non-zero.
         """
         self.source = source
         self.destination = destination or str(Path.cwd())
@@ -196,6 +208,7 @@ class OmeZarrConverter:
         self._start_t_src = start_t_src
         self._start_t_dest = start_t_dest
         self._tbatch = None if tbatch is None else tbatch
+        self._max_write_workers = max_write_workers
 
     # -------------------------------------------------------------------------
     # Internal helpers
@@ -317,6 +330,49 @@ class OmeZarrConverter:
             return [tuple(int(x) for x in level_shapes_spec)]
         # Already per-level
         return [tuple(int(x) for x in level) for level in level_shapes_spec]
+
+    def _write_by_region(
+        self,
+        writer: OMEZarrWriter,
+        data_all: "np.ndarray",
+        *,
+        max_workers: int,
+    ) -> None:
+        """
+        Write ``data_all`` into the zarr store using parallel shard-aligned
+        ``write_region(lock=False)`` calls.
+
+        Iterates over every level-0 shard coordinate, slices the source array,
+        and calls ``write_region`` which propagates the write — downsampled — to
+        every pyramid level.  Because shards are proportional, each call touches
+        exactly one independent shard object at every level: no shard is shared
+        between two concurrent calls, so no lock is needed and there is no
+        read-modify-write.
+
+        The first shard is written synchronously before the thread pool starts
+        to ensure ``OMEZarrWriter._initialize()`` (which creates arrays and
+        metadata) runs exactly once on the calling thread.
+        """
+        shard0 = writer.shards_per_level[0]
+        shape0 = writer.level_shapes[0]
+        n_shards = tuple(math.ceil(s / sh) for s, sh in zip(shape0, shard0))
+        all_coords = list(itertools.product(*[range(n) for n in n_shards]))
+
+        def write_one(coords: Tuple[int, ...]) -> None:
+            region = tuple(
+                slice(c * sh, min((c + 1) * sh, shape0[ax]))
+                for ax, (c, sh) in enumerate(zip(coords, shard0))
+            )
+            writer.write_region(data_all[region], region, lock=False)
+
+        # First write initializes the zarr store (not thread-safe); remaining
+        # writes are safe to parallelize since the store is already open.
+        first, *rest = all_coords
+        write_one(first)
+
+        if rest:
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                list(pool.map(write_one, rest))
 
     # -------------------------------------------------------------------------
     # Public
@@ -479,7 +535,20 @@ class OmeZarrConverter:
             has_t = "t" in axis_names
             t_total = int(getattr(r.dims, "T", 1)) if has_t else 1
 
-            if has_t and t_total > 1:
+            _use_region_write = (
+                self._max_write_workers is not None
+                and self._writer_zarr_format == 3
+                and writer.shards_per_level is not None
+                and not self._start_t_src
+                and not self._start_t_dest
+            )
+
+            if _use_region_write:
+                assert self._max_write_workers is not None
+                self._write_by_region(
+                    writer, data_all, max_workers=self._max_write_workers
+                )
+            elif has_t and t_total > 1:
                 base_t_src = self._start_t_src or 0
                 base_t_dest = self._start_t_dest or 0
                 batch_size = self._tbatch or t_total
@@ -493,7 +562,7 @@ class OmeZarrConverter:
                     slices[t_axis] = slice(base_t_src + i, base_t_src + i + batch)
                     writer.write_timepoints(
                         data=data_all[tuple(slices)],
-                        start_T_dest=base_t_dest + i,  # advance destination each batch
+                        start_T_dest=base_t_dest + i,
                         total_T=batch,
                     )
             else:
