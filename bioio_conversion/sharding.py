@@ -7,6 +7,10 @@ from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_targe
 _ATLAS_SIZE = 2048
 
 
+def _round_to_multiple(value: int, multiple: int) -> int:
+    return ((value + multiple - 1) // multiple) * multiple
+
+
 def _choose_zarr_layout(
     shape: Tuple[int, ...],
     dtype: Union[str, "np.dtype[Any]"],
@@ -16,6 +20,10 @@ def _choose_zarr_layout(
 ) -> Tuple[Tuple[int, ...], Tuple[int, ...]]:
     """
     Compute chunk and shard shapes for a Zarr v3 OME-Zarr array.
+
+    Intended for level-0 of a multi-resolution pyramid.  For lower levels use
+    ``_proportional_shard`` to derive a shard that keeps the number of shards
+    per axis constant, which is required for lock-free region writes.
 
     Parameters
     ----------
@@ -43,7 +51,6 @@ def _choose_zarr_layout(
     Y = dim_sizes[DimensionNames.SpatialY]
     X = dim_sizes[DimensionNames.SpatialX]
 
-    # Chunk computation: delegate to multiscale_chunk_size_from_memory_target,
     chunk_raw = tuple(
         multiscale_chunk_size_from_memory_target([shape], dtype, chunk_limit_bytes)[0]
     )
@@ -61,7 +68,7 @@ def _choose_zarr_layout(
     }
     chunk_shape = tuple(chunk_sizes[d] for d in dims)
 
-    # Shard computation: pack chunks along Z→Y→X→C→T up to the shard budget.
+    # Pack chunks along Z→Y→X→C→T up to the shard budget.
     chunk_bytes = int(np.prod(chunk_shape)) * np.dtype(dtype).itemsize
     max_chunks_per_shard = max(1, shard_limit_bytes // chunk_bytes)
 
@@ -92,6 +99,110 @@ def _choose_zarr_layout(
     shard_shape = tuple(shard_sizes[d] for d in dims)
 
     return chunk_shape, shard_shape
+
+
+def _proportional_shard(
+    shape: Tuple[int, ...],
+    chunk_shape: Tuple[int, ...],
+    reference_shape: Tuple[int, ...],
+    reference_shard: Tuple[int, ...],
+) -> Tuple[int, ...]:
+    """
+    Derive a shard shape for a lower pyramid level proportional to level 0.
+
+    Each axis is scaled as ``reference_shard[ax] * shape[ax] / reference_shape[ax]``
+    then rounded up to the nearest chunk multiple.  This keeps the number of
+    shards per axis constant across all pyramid levels, which is required for
+    safe lock-free region writes via ``write_region(lock=False)``.
+
+    Parameters
+    ----------
+    shape
+        Level shape to compute a shard for.
+    chunk_shape
+        Chunk shape at this level (from ``_choose_zarr_layout``).
+    reference_shape
+        Level-0 shape (proportionality baseline).
+    reference_shard
+        Level-0 shard shape (proportionality baseline).
+
+    Returns
+    -------
+    shard_shape
+        In the same axis order and length as ``shape``.
+    """
+    return tuple(
+        _round_to_multiple(
+            max(
+                chunk_shape[ax],
+                round(reference_shard[ax] * shape[ax] / reference_shape[ax]),
+            ),
+            chunk_shape[ax],
+        )
+        for ax in range(len(shape))
+    )
+
+
+def _choose_pyramid_layout(
+    level_shapes: List[Tuple[int, ...]],
+    dtype: Union[str, "np.dtype[Any]"],
+    dims: str,
+    chunk_limit_bytes: int = 16 * 1024**2,
+    shard_limit_bytes: int = 4 * 1024**3,
+) -> Tuple[List[Tuple[int, ...]], List[Tuple[int, ...]]]:
+    """
+    Compute chunk and shard shapes for every level of a multi-resolution pyramid.
+
+    Level 0 uses the budget shard algorithm (``_choose_zarr_layout``).  All
+    subsequent levels use ``_proportional_shard`` to derive shards that keep
+    the number of shards per axis constant across the pyramid — the invariant
+    required for safe lock-free region writes via ``write_region(lock=False)``.
+
+    Parameters
+    ----------
+    level_shapes
+        Per-level shapes, level 0 first.
+    dtype
+        Array dtype (any form accepted by ``np.dtype``).
+    dims
+        Dimension labels matching the axis order of the shapes.
+    chunk_limit_bytes
+        Maximum uncompressed chunk size. Default: 16 MiB.
+    shard_limit_bytes
+        Maximum uncompressed shard size for level 0. Default: 4 GiB.
+
+    Returns
+    -------
+    all_chunks, all_shards
+        Per-level chunk and shard shapes, level 0 first.
+    """
+    chunk0, shard0 = _choose_zarr_layout(
+        level_shapes[0], dtype, dims, chunk_limit_bytes, shard_limit_bytes
+    )
+    all_chunks: List[Tuple[int, ...]] = [chunk0]
+    all_shards: List[Tuple[int, ...]] = [shard0]
+
+    shape0 = level_shapes[0]
+    for lvl_shape in level_shapes[1:]:
+        lvl_chunk_raw, _ = _choose_zarr_layout(
+            lvl_shape, dtype, dims, chunk_limit_bytes
+        )
+        # Cap each chunk axis to the proportional shard target.  Without this,
+        # chunk sizes grow as levels get smaller (the budget fills more of the
+        # axis), eventually exceeding the proportional target and forcing
+        # _proportional_shard to pick a larger shard — breaking the constant
+        # n_shards invariant required for lock-free region writes.
+        prop_target = tuple(
+            max(1, round(shard0[ax] * lvl_shape[ax] / shape0[ax]))
+            for ax in range(len(lvl_shape))
+        )
+        lvl_chunk = tuple(
+            min(lvl_chunk_raw[ax], prop_target[ax]) for ax in range(len(lvl_shape))
+        )
+        all_chunks.append(lvl_chunk)
+        all_shards.append(_proportional_shard(lvl_shape, lvl_chunk, shape0, shard0))
+
+    return all_chunks, all_shards
 
 
 def _build_pyramid_shapes(

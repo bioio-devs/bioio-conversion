@@ -6,7 +6,7 @@ import pytest
 from bioio_conversion.sharding import (
     _ATLAS_SIZE,
     _build_pyramid_shapes,
-    _choose_zarr_layout,
+    _choose_pyramid_layout,
 )
 
 _16MiB = 16 * 1024**2
@@ -28,7 +28,7 @@ def _atlas_fits(shape: tuple, dims: str) -> bool:
     return tiles_x * tiles_y >= Z
 
 
-def _lvl(  # noqa: E501
+def _lvl(
     *, shape: tuple, chunk_shape: tuple, shard_shape: tuple, atlas_fits: bool
 ) -> tuple:
     return shape, chunk_shape, shard_shape, atlas_fits
@@ -111,7 +111,8 @@ _PYRAMID_CASES = [
     (
         "ZYX",
         [
-            # Large XY forces 3 XY halvings; Z stays constant throughout
+            # Large XY forces 3 XY halvings; Z stays constant throughout.
+            # Level-0 shard covers whole image; proportional shards keep 1 shard/axis.
             _lvl(
                 shape=(10, 1500, 2500),
                 chunk_shape=(2, 1500, 2500),
@@ -137,6 +138,7 @@ _PYRAMID_CASES = [
         [
             # Reader-native XYZ ordering: Z is rightmost so fills first, then Y,
             # then X is split by the budget.  Shard packs X-chunks to cover full X.
+            # Proportional path: L2 X-shard (1250) exceeds level X=625 → still 1 shard.
             _lvl(
                 shape=(2500, 1500, 10),
                 chunk_shape=(559, 1500, 10),
@@ -152,7 +154,7 @@ _PYRAMID_CASES = [
             _lvl(
                 shape=(625, 375, 10),
                 chunk_shape=(625, 375, 10),
-                shard_shape=(625, 375, 10),
+                shard_shape=(1250, 375, 10),
                 atlas_fits=True,
             ),
         ],
@@ -194,13 +196,13 @@ _PYRAMID_CASES = [
             ),
         ],
     ),
-    # ── 5-level TCZYX: T and C shard packing (primary reference case) ────
+    # ── 5-level TCZYX: T shard stays at 1 (100 shards/T constant) ────────
     (
         "TCZYX",
         [
-            # Matches the compute_shards.py script output for this shape.
-            # At level 0 the shard budget is exhausted by Z;
-            # T and C pack at later levels.
+            # Level-0 shard budget exhausted by Z; T shard = 1 → 100 T-shards.
+            # Proportional path keeps T shard = 1 at every level (vs budget path
+            # which packs T into the shard as spatial dims shrink).
             _lvl(
                 shape=(100, 4, 100, 1500, 2500),
                 chunk_shape=(1, 1, 2, 1500, 2500),
@@ -210,25 +212,25 @@ _PYRAMID_CASES = [
             _lvl(
                 shape=(100, 4, 100, 750, 1250),
                 chunk_shape=(1, 1, 8, 750, 1250),
-                shard_shape=(5, 4, 104, 750, 1250),
+                shard_shape=(1, 4, 104, 750, 1250),
                 atlas_fits=False,
             ),
             _lvl(
                 shape=(100, 4, 100, 375, 625),
                 chunk_shape=(1, 1, 35, 375, 625),
-                shard_shape=(21, 4, 105, 375, 625),
+                shard_shape=(1, 4, 105, 375, 625),
                 atlas_fits=False,
             ),
             _lvl(
                 shape=(100, 4, 100, 187, 312),
                 chunk_shape=(1, 1, 100, 187, 312),
-                shard_shape=(92, 4, 100, 187, 312),
+                shard_shape=(1, 4, 100, 187, 312),
                 atlas_fits=False,
             ),
             _lvl(
                 shape=(100, 4, 100, 93, 156),
                 chunk_shape=(1, 1, 100, 93, 156),
-                shard_shape=(100, 4, 100, 93, 156),
+                shard_shape=(1, 4, 100, 93, 156),
                 atlas_fits=True,
             ),
         ],
@@ -239,6 +241,8 @@ _PYRAMID_CASES = [
         [
             # Z >> min(X,Y): pyramid halves Z first (3×), then switches to XY.
             # Demonstrates the min(X,Y)≥Z branch in _build_pyramid_shapes.
+            # Z chunk changes at L3 (125 < 139), so proportional Z shard rounds
+            # up to 250 to remain a chunk multiple.
             _lvl(
                 shape=(4, 1000, 200, 300),
                 chunk_shape=(1, 139, 200, 300),
@@ -260,13 +264,13 @@ _PYRAMID_CASES = [
             _lvl(
                 shape=(4, 125, 200, 300),
                 chunk_shape=(1, 125, 200, 300),
-                shard_shape=(4, 125, 200, 300),
+                shard_shape=(4, 250, 200, 300),
                 atlas_fits=False,
             ),
             _lvl(
                 shape=(4, 125, 100, 150),
                 chunk_shape=(1, 125, 100, 150),
-                shard_shape=(4, 125, 100, 150),
+                shard_shape=(4, 250, 100, 150),
                 atlas_fits=True,
             ),
         ],
@@ -274,8 +278,11 @@ _PYRAMID_CASES = [
     (
         "TCZYX",
         [
-            # Same spatial structure: T and C timepoint sharding visible at level 4
-            # once the shard budget is no longer exhausted by Z chunks
+            # Same spatial structure as the CZYX case above, with T and C.
+            # shard_Z_0 = 8 × 139 = 1112 already exceeds shape_Z = 1000, so
+            # n_shards_Z = 1 throughout.  At L3 chunk_Z changes from 139 → 125
+            # (full Z fits in the chunk budget); _round_to_multiple(139, 125) = 250
+            # so shard_Z jumps to 250, but ceil(125/250) = 1 = n_shards_0_Z. ✓
             _lvl(
                 shape=(5, 2, 1000, 200, 300),
                 chunk_shape=(1, 1, 139, 200, 300),
@@ -297,13 +304,13 @@ _PYRAMID_CASES = [
             _lvl(
                 shape=(5, 2, 125, 200, 300),
                 chunk_shape=(1, 1, 125, 200, 300),
-                shard_shape=(5, 2, 125, 200, 300),
+                shard_shape=(5, 2, 250, 200, 300),
                 atlas_fits=False,
             ),
             _lvl(
                 shape=(5, 2, 125, 100, 150),
                 chunk_shape=(1, 1, 125, 100, 150),
-                shard_shape=(5, 2, 125, 100, 150),
+                shard_shape=(5, 2, 250, 100, 150),
                 atlas_fits=True,
             ),
         ],
@@ -420,6 +427,59 @@ _PYRAMID_CASES = [
             ),
         ],
     ),
+    # ── 7-level TCZYX: proportional underflow regression ─────────────────
+    (
+        "TCZYX",
+        [
+            # Large image where per-level independent chunks would grow past the
+            # proportional shard target at levels 2–6 (chunk_Y expands to fill the
+            # 16 MiB budget as Y shrinks, exceeding the proportional target).
+            # _choose_pyramid_layout caps chunk per axis to the proportional target
+            # so n_shards stays (10, 3, 1, 8, 1) throughout.
+            _lvl(
+                shape=(10, 3, 64, 16384, 16384),
+                chunk_shape=(1, 1, 1, 512, 16384),
+                shard_shape=(1, 1, 64, 2048, 16384),
+                atlas_fits=False,
+            ),
+            _lvl(
+                shape=(10, 3, 64, 8192, 8192),
+                chunk_shape=(1, 1, 1, 1024, 8192),
+                shard_shape=(1, 1, 64, 1024, 8192),
+                atlas_fits=False,
+            ),
+            _lvl(
+                shape=(10, 3, 64, 4096, 4096),
+                chunk_shape=(1, 1, 1, 512, 4096),
+                shard_shape=(1, 1, 64, 512, 4096),
+                atlas_fits=False,
+            ),
+            _lvl(
+                shape=(10, 3, 64, 2048, 2048),
+                chunk_shape=(1, 1, 2, 256, 2048),
+                shard_shape=(1, 1, 64, 256, 2048),
+                atlas_fits=False,
+            ),
+            _lvl(
+                shape=(10, 3, 64, 1024, 1024),
+                chunk_shape=(1, 1, 8, 128, 1024),
+                shard_shape=(1, 1, 64, 128, 1024),
+                atlas_fits=False,
+            ),
+            _lvl(
+                shape=(10, 3, 64, 512, 512),
+                chunk_shape=(1, 1, 32, 64, 512),
+                shard_shape=(1, 1, 64, 64, 512),
+                atlas_fits=False,
+            ),
+            _lvl(
+                shape=(10, 3, 64, 256, 256),
+                chunk_shape=(1, 1, 64, 32, 256),
+                shard_shape=(1, 1, 64, 32, 256),
+                atlas_fits=True,
+            ),
+        ],
+    ),
     # ── XY split: chunk limit exceeded, leftmost spatial axis is split ────
     (
         "YX",
@@ -427,6 +487,8 @@ _PYRAMID_CASES = [
             # XY plane (5000×5000 uint16 = 50 MB) exceeds 16 MiB limit.
             # X is rightmost so X fills fully (5000); Y is split to 1677.
             # The shard packs all 3 Y-chunks to cover the full Y extent.
+            # Proportional path: L1 Y-shard (5000) and L2 Y-shard (2500) keep
+            # n_shards_Y=1 at every level.
             _lvl(
                 shape=(5000, 5000),
                 chunk_shape=(1677, 5000),
@@ -436,13 +498,13 @@ _PYRAMID_CASES = [
             _lvl(
                 shape=(2500, 2500),
                 chunk_shape=(2500, 2500),
-                shard_shape=(2500, 2500),
+                shard_shape=(5000, 2500),
                 atlas_fits=False,
             ),
             _lvl(
                 shape=(1250, 1250),
                 chunk_shape=(1250, 1250),
-                shard_shape=(1250, 1250),
+                shard_shape=(2500, 1250),
                 atlas_fits=True,
             ),
         ],
@@ -461,18 +523,23 @@ _PYRAMID_CASES = [
             _lvl(
                 shape=(2500, 2500),
                 chunk_shape=(2500, 2500),
-                shard_shape=(2500, 2500),
+                shard_shape=(5000, 2500),
                 atlas_fits=False,
             ),
             _lvl(
                 shape=(1250, 1250),
                 chunk_shape=(1250, 1250),
-                shard_shape=(1250, 1250),
+                shard_shape=(2500, 1250),
                 atlas_fits=True,
             ),
         ],
     ),
 ]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# _build_pyramid_shapes + _choose_zarr_layout: full pyramid (all levels)
+# ──────────────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize(
@@ -484,7 +551,8 @@ def test_pyramid_layout(dims: str, levels: list) -> None:
     """
     For each case:
       - _build_pyramid_shapes produces exactly the expected level shapes
-      - _choose_zarr_layout produces the expected chunk and shard at each level
+      - Level 0: _choose_zarr_layout (budget path) matches expected chunk + shard
+      - Levels > 0: _choose_pyramid_layout (proportional) matches expected chunk + shard
       - chunk bytes are within the 16 MiB ceiling
       - shard bytes are within the 4 GiB ceiling
       - the terminal level fits within the atlas canvas
@@ -496,12 +564,15 @@ def test_pyramid_layout(dims: str, levels: list) -> None:
         levels
     ), f"expected {len(levels)} levels, got {len(level_shapes)}: {level_shapes}"
 
+    all_chunks, all_shards = _choose_pyramid_layout(level_shapes, _DTYPE, dims)
+
     for i, (lvl_shape, (exp_shape, exp_chunk, exp_shard, exp_fits)) in enumerate(
         zip(level_shapes, levels)
     ):
         assert lvl_shape == exp_shape, f"level {i}: shape mismatch"
 
-        chunk, shard = _choose_zarr_layout(lvl_shape, _DTYPE, dims)
+        chunk = all_chunks[i]
+        shard = all_shards[i]
 
         assert chunk == exp_chunk, f"level {i}: chunk mismatch"
         assert shard == exp_shard, f"level {i}: shard mismatch"

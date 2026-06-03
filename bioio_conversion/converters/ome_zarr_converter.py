@@ -13,7 +13,7 @@ from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_targe
 from zarr.codecs import BloscCodec
 
 from ..cluster import Cluster
-from ..sharding import _build_pyramid_shapes, _choose_zarr_layout
+from ..sharding import _build_pyramid_shapes, _choose_pyramid_layout
 
 
 class OmeZarrConverter:
@@ -407,17 +407,12 @@ class OmeZarrConverter:
                 level_shapes_list = self._ensure_per_level_shapes(
                     writer_level_shapes_param
                 )
-                auto_chunks: List[Tuple[int, ...]] = []
-                auto_shards: List[Tuple[int, ...]] = []
-                for lvl_shape in level_shapes_list:
-                    c, s = _choose_zarr_layout(
-                        shape=lvl_shape,
-                        dtype=self.output_dtype,
-                        dims=dims,
-                        chunk_limit_bytes=chunk_limit,
-                    )
-                    auto_chunks.append(c)
-                    auto_shards.append(s)
+                auto_chunks, auto_shards = _choose_pyramid_layout(
+                    level_shapes=level_shapes_list,
+                    dtype=self.output_dtype,
+                    dims=dims,
+                    chunk_limit_bytes=chunk_limit,
+                )
                 writer_chunk_shape_param = auto_chunks
                 writer_shard_shape_param = auto_shards
             elif self._helper_memory_target_bytes is not None:
