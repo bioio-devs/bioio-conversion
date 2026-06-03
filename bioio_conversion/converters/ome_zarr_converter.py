@@ -389,12 +389,6 @@ class OmeZarrConverter:
                 )
 
             # (4) Chunking + sharding
-            #
-            # For zarr v3 with no explicit chunk or shard shapes, auto-compute
-            # both using _choose_zarr_layout: viewer-optimized whole-XY-plane
-            # chunks, shards packed Z→C→T.  Falls back to generic chunking for
-            # non-standard dims (e.g. 'S' axis) or when the caller supplied
-            # explicit shapes.
             writer_shard_shape_param = self._writer_shard_shape
 
             _can_auto_layout = (
