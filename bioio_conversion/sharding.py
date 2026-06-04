@@ -7,10 +7,6 @@ from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_targe
 _ATLAS_SIZE = 2048
 
 
-def _round_to_multiple(value: int, multiple: int) -> int:
-    return ((value + multiple - 1) // multiple) * multiple
-
-
 def _choose_zarr_layout(
     shape: Tuple[int, ...],
     dtype: Union[str, "np.dtype[Any]"],
@@ -132,14 +128,14 @@ def _proportional_shard(
         In the same axis order and length as ``shape``.
     """
     return tuple(
-        _round_to_multiple(
+        ((v + chunk_shape[ax] - 1) // chunk_shape[ax]) * chunk_shape[ax]
+        for ax in range(len(shape))
+        for v in (
             max(
                 chunk_shape[ax],
                 round(reference_shard[ax] * shape[ax] / reference_shape[ax]),
             ),
-            chunk_shape[ax],
         )
-        for ax in range(len(shape))
     )
 
 
@@ -192,12 +188,21 @@ def _choose_pyramid_layout(
         # axis), eventually exceeding the proportional target and forcing
         # _proportional_shard to pick a larger shard — breaking the constant
         # n_shards invariant required for lock-free region writes.
+        #
+        # For axes whose size is unchanged from level 0 (e.g. Z when the pyramid
+        # only halves X/Y), lock the chunk to chunk0 for that axis.  If it were
+        # allowed to grow, _proportional_shard would round up to a different
+        # chunk multiple, producing a different shard shape and triggering a
+        # spurious proportionality warning from write_region(lock=False).
         prop_target = tuple(
             max(1, round(shard0[ax] * lvl_shape[ax] / shape0[ax]))
             for ax in range(len(lvl_shape))
         )
         lvl_chunk = tuple(
-            min(lvl_chunk_raw[ax], prop_target[ax]) for ax in range(len(lvl_shape))
+            chunk0[ax]
+            if lvl_shape[ax] == shape0[ax]
+            else min(lvl_chunk_raw[ax], prop_target[ax])
+            for ax in range(len(lvl_shape))
         )
         all_chunks.append(lvl_chunk)
         all_shards.append(_proportional_shard(lvl_shape, lvl_chunk, shape0, shard0))

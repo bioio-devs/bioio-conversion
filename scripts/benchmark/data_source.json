@@ -1,12 +1,21 @@
 {
   "runs": [
     {
-      "name": "2GB-czi-s0",
-      "size_label": "2.00 GB",
-      "source": "PATH or URL",
+      "name": "timelapse-default-write",
+      "size_label": "full-volume write",
+      "source": "/allen/programs/allencell/data/proj0/3a9/3df/1b4/466/c87/f2a/24d/a10/36e/6ec/eb/3500008271_20260227_20X_Timelapse.czi",
       "scenes": 0,
       "zarr_format": 3,
       "dtype": "uint16"
+    },
+    {
+      "name": "timelapse-region-write",
+      "size_label": "parallel region write",
+      "source": "/allen/programs/allencell/data/proj0/3a9/3df/1b4/466/c87/f2a/24d/a10/36e/6ec/eb/3500008271_20260227_20X_Timelapse.czi",
+      "scenes": 0,
+      "zarr_format": 3,
+      "dtype": "uint16",
+      "max_write_workers": 8
     }
   ]
 }
