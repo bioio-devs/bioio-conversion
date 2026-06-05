@@ -358,21 +358,40 @@ class OmeZarrConverter:
         n_shards = tuple(math.ceil(s / sh) for s, sh in zip(shape0, shard0))
         all_coords = list(itertools.product(*[range(n) for n in n_shards]))
 
-        def write_one(coords: Tuple[int, ...]) -> None:
+        def write_one(args: Tuple[Tuple[slice, ...], np.ndarray]) -> None:
+            region, np_shard = args
+            writer.write_region(np_shard, region, lock=False)
+
+        def make_region(
+            coords: Tuple[int, ...]
+        ) -> Tuple[Tuple[slice, ...], np.ndarray]:
             region = tuple(
                 slice(c * sh, min((c + 1) * sh, shape0[ax]))
                 for ax, (c, sh) in enumerate(zip(coords, shard0))
             )
-            writer.write_region(data_all[region], region, lock=False)
+            # Compute on the calling thread: CZI readers are not thread-safe,
+            # so all reads must be serialized here before writes are parallelized.
+            return region, data_all[region].compute()
 
         # First write initializes the zarr store (not thread-safe); remaining
         # writes are safe to parallelize since the store is already open.
         first, *rest = all_coords
-        write_one(first)
+        write_one(make_region(first))
 
         if rest:
+            from collections import deque
+
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                list(pool.map(write_one, rest))
+                # Pipeline: read on main thread (serialized, CZI-safe), write
+                # in pool (parallel).  Cap in-flight futures to max_workers so
+                # at most max_workers shard numpy arrays live in memory at once.
+                pending: deque = deque()
+                for coords in rest:
+                    while len(pending) >= max_workers:
+                        pending.popleft().result()
+                    pending.append(pool.submit(write_one, make_region(coords)))
+                for f in pending:
+                    f.result()
 
     # -------------------------------------------------------------------------
     # Public
