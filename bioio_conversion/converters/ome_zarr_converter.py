@@ -1,5 +1,9 @@
+import itertools
+import os
 import re
+import threading
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -52,6 +56,8 @@ class OmeZarrConverter:
         tbatch: Optional[int] = None,
         dtype: Optional[Union[str, np.dtype]] = None,
         auto_dask_cluster: bool = False,
+        n_workers: Optional[int] = None,
+        shard_limit_bytes: int = 4 * 1024**3,
     ) -> None:
         """
         Initialize an OME-Zarr converter with flexible scene selection,
@@ -142,7 +148,14 @@ class OmeZarrConverter:
         auto_dask_cluster : bool
             If True, automatically spin up a local Dask cluster with
             8 workers (using `Cluster(n_workers=8).start()`) before any
-            conv
+            conversion.
+        n_workers : Optional[int]
+            Maximum number of concurrent shard writes (auto-layout path only).
+            Each worker holds one shard in memory, so this bounds peak RAM use.
+            Defaults to ``min(n_shards, os.cpu_count())``.
+        shard_limit_bytes : int
+            Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
+            Reduce for machines with less RAM or to force smaller shards in tests.
         """
         self.source = source
         self.destination = destination or str(Path.cwd())
@@ -196,6 +209,8 @@ class OmeZarrConverter:
         self._start_t_src = start_t_src
         self._start_t_dest = start_t_dest
         self._tbatch = None if tbatch is None else tbatch
+        self._n_workers = n_workers
+        self._shard_limit_bytes = shard_limit_bytes
 
     # -------------------------------------------------------------------------
     # Internal helpers
@@ -412,6 +427,7 @@ class OmeZarrConverter:
                     dtype=self.output_dtype,
                     dims=dims,
                     chunk_limit_bytes=chunk_limit,
+                    shard_limit_bytes=self._shard_limit_bytes,
                 )
                 writer_chunk_shape_param = auto_chunks
                 writer_shard_shape_param = auto_shards
@@ -475,26 +491,69 @@ class OmeZarrConverter:
             native_order = r.dims.order.upper()
             data_all = r.get_image_dask_data(native_order)
 
-            # (8) Write
+            # (8) Write — shard-aligned region writes via write_region.
+            # Every call covers exactly one shard boundary at every pyramid level
+            # so no shard is ever read back to be merged (no read-modify-write).
             has_t = "t" in axis_names
-            t_total = int(getattr(r.dims, "T", 1)) if has_t else 1
+            t_ax = dims.index("T") if has_t else None
+            base_t_src = self._start_t_src or 0
+            base_t_dest = self._start_t_dest or 0
+            t_offset = base_t_src - base_t_dest
 
-            if has_t and t_total > 1:
-                base_t_src = self._start_t_src or 0
-                base_t_dest = self._start_t_dest or 0
-                batch_size = self._tbatch or t_total
-                # find which axis index is T once (e.g. axis 0 in "TCYX")
-                t_axis = list(native_order).index("T")
-                for i in range(0, t_total, batch_size):
-                    batch = min(batch_size, t_total - i)
-                    # pre-slice to this batch window so the writer only holds
-                    # the dask graph for these frames, not the full array
-                    slices = [slice(None)] * data_all.ndim
-                    slices[t_axis] = slice(base_t_src + i, base_t_src + i + batch)
-                    writer.write_timepoints(
-                        data=data_all[tuple(slices)],
-                        start_T_dest=base_t_dest + i,  # advance destination each batch
-                        total_T=batch,
-                    )
+            writer.initialize()
+
+            if _can_auto_layout:
+                shard0 = auto_shards[0]
+                per_ax = [
+                    [
+                        (s, min(s + shard0[ax], level0_shape[ax]))
+                        for s in range(0, level0_shape[ax], shard0[ax])
+                    ]
+                    for ax in range(len(level0_shape))
+                ]
+                all_bounds = list(itertools.product(*per_ax))
+                n_workers = self._n_workers or min(len(all_bounds), os.cpu_count() or 4)
+                read_lock = threading.Lock()
+
+                def _write_shard(bounds: Tuple[Tuple[int, int], ...]) -> None:
+                    dest_region = tuple(slice(lo, hi) for lo, hi in bounds)
+                    if t_offset and t_ax is not None:
+                        src_slices = list(dest_region)
+                        src_slices[t_ax] = slice(
+                            dest_region[t_ax].start + t_offset,
+                            dest_region[t_ax].stop + t_offset,
+                        )
+                        src_region: Tuple[slice, ...] = tuple(src_slices)
+                    else:
+                        src_region = dest_region
+                    with read_lock:
+                        shard_data = data_all[src_region].compute()
+                    writer.write_region(shard_data, dest_region)
+
+                with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                    list(pool.map(_write_shard, all_bounds))
+
             else:
-                writer.write_full_volume(data_all)
+                # Fallback: T-batched single-threaded writes.
+                if has_t:
+                    assert t_ax is not None
+                    t_total = level0_shape[t_ax]
+                    batch_size = self._tbatch or t_total
+                    for i in range(0, t_total, batch_size):
+                        t_end = min(i + batch_size, t_total)
+                        dest_slices: List[Any] = [
+                            slice(0, level0_shape[ax])
+                            for ax in range(len(level0_shape))
+                        ]
+                        dest_slices[t_ax] = slice(base_t_dest + i, base_t_dest + t_end)
+                        src_slices_fb: List[Any] = list(dest_slices)
+                        src_slices_fb[t_ax] = slice(base_t_src + i, base_t_src + t_end)
+                        writer.write_region(
+                            data_all[tuple(src_slices_fb)].compute(),
+                            tuple(dest_slices),
+                        )
+                else:
+                    writer.write_region(
+                        data_all.compute(),
+                        tuple(slice(0, s) for s in level0_shape),
+                    )
