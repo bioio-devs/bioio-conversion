@@ -1,7 +1,5 @@
 import itertools
-import os
 import re
-import threading
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -56,7 +54,7 @@ class OmeZarrConverter:
         tbatch: Optional[int] = None,
         dtype: Optional[Union[str, np.dtype]] = None,
         auto_dask_cluster: bool = False,
-        n_workers: Optional[int] = None,
+        n_workers: int = 1,
         shard_limit_bytes: int = 4 * 1024**3,
     ) -> None:
         """
@@ -152,7 +150,7 @@ class OmeZarrConverter:
         n_workers : Optional[int]
             Maximum number of concurrent shard writes (auto-layout path only).
             Each worker holds one shard in memory, so this bounds peak RAM use.
-            Defaults to ``min(n_shards, os.cpu_count())``.
+            Number of concurrent shard workers. Default: 1 (single-threaded).
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
             Reduce for machines with less RAM or to force smaller shards in tests.
@@ -512,8 +510,7 @@ class OmeZarrConverter:
                     for ax in range(len(level0_shape))
                 ]
                 all_bounds = list(itertools.product(*per_ax))
-                n_workers = self._n_workers or min(len(all_bounds), os.cpu_count() or 4)
-                read_lock = threading.Lock()
+                n_workers = self._n_workers
 
                 def _write_shard(bounds: Tuple[Tuple[int, int], ...]) -> None:
                     dest_region = tuple(slice(lo, hi) for lo, hi in bounds)
@@ -526,8 +523,10 @@ class OmeZarrConverter:
                         src_region: Tuple[slice, ...] = tuple(src_slices)
                     else:
                         src_region = dest_region
-                    with read_lock:
-                        shard_data = data_all[src_region].compute()
+                    thread_bio = BioImage(self.source)
+                    thread_bio.set_scene(scene_index)
+                    thread_data = thread_bio.reader.get_image_dask_data(native_order)
+                    shard_data = thread_data[src_region].compute()
                     writer.write_region(shard_data, dest_region)
 
                 with ThreadPoolExecutor(max_workers=n_workers) as pool:

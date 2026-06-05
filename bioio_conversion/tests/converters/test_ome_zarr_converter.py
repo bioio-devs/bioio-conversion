@@ -378,15 +378,13 @@ def test_concurrent_region_write_matches_sequential(
         region = tuple(slice(lo, hi) for lo, hi in bounds)
         ref_writer.write_region(data[region].copy(), region)
 
-    # Under test: converter-style concurrent write_region
+    # Under test: concurrent write_region (no lock — numpy slices are safe)
     test_writer = _make_writer(str(tmp_path / "test.zarr"))
     test_writer.initialize()
-    read_lock = threading.Lock()
 
     def _write_shard(bounds: Tuple[Tuple[int, int], ...]) -> None:
         region = tuple(slice(lo, hi) for lo, hi in bounds)
-        with read_lock:
-            shard_data = data[region].copy()
+        shard_data = data[region].copy()
         test_writer.write_region(shard_data, region)
 
     n_workers = min(len(all_bounds), (os.cpu_count() or 4))
@@ -444,12 +442,10 @@ def test_concurrent_region_write_is_parallel(tmp_path: pathlib.Path) -> None:
     assert n_shards > 1, "Test requires >1 shard; increase shape or reduce shard_limit"
 
     barrier = threading.Barrier(n_shards, timeout=10)
-    read_lock = threading.Lock()
 
     def _write_shard(bounds: Tuple[Tuple[int, int], ...]) -> None:
         region = tuple(slice(lo, hi) for lo, hi in bounds)
-        with read_lock:
-            shard_data = data[region].copy()
+        shard_data = data[region].copy()
         barrier.wait()  # all n_shards workers must arrive before any write starts
         writer.write_region(shard_data, region)
 
