@@ -334,64 +334,47 @@ class OmeZarrConverter:
     def _write_by_region(
         self,
         writer: OMEZarrWriter,
-        data_all: "np.ndarray",
+        source: str,
+        native_order: str,
+        scene_index: int,
+        shard_shape: Tuple[int, ...],
         *,
         max_workers: int,
     ) -> None:
         """
-        Write ``data_all`` into the zarr store using parallel shard-aligned
+        Write the full image into the zarr store via concurrent shard-aligned
         ``write_region(lock=False)`` calls.
 
-        Iterates over every level-0 shard coordinate, slices the source array,
-        and calls ``write_region`` which propagates the write — downsampled — to
-        every pyramid level.  Because shards are proportional, each call touches
-        exactly one independent shard object at every level: no shard is shared
-        between two concurrent calls, so no lock is needed and there is no
-        read-modify-write.
-
-        The first shard is written synchronously before the thread pool starts
-        to ensure ``OMEZarrWriter._initialize()`` (which creates arrays and
-        metadata) runs exactly once on the calling thread.
+        The zarr store is initialized once on the calling thread before the
+        pool starts, so ``_initialize()`` is never called from multiple threads
+        simultaneously.  Each worker then opens its own independent BioImage
+        instance (its own file handle and parser state), which allows CZI reads
+        to proceed concurrently across workers rather than serializing on a
+        single shared reader.
         """
-        shard0 = writer.shards_per_level[0]
+        writer._initialize()
+
         shape0 = writer.level_shapes[0]
-        n_shards = tuple(math.ceil(s / sh) for s, sh in zip(shape0, shard0))
+        n_shards = tuple(math.ceil(s / sh) for s, sh in zip(shape0, shard_shape))
         all_coords = list(itertools.product(*[range(n) for n in n_shards]))
 
-        def write_one(args: Tuple[Tuple[slice, ...], np.ndarray]) -> None:
-            region, np_shard = args
-            writer.write_region(np_shard, region, lock=False)
-
-        def make_region(
-            coords: Tuple[int, ...]
-        ) -> Tuple[Tuple[slice, ...], np.ndarray]:
+        def read_and_write(coords: Tuple[int, ...]) -> None:
+            # Independent reader per thread: own file handle, own parser state,
+            # so concurrent reads from the same CZI file are safe.
+            bio = BioImage(source)
+            bio.set_scene(scene_index)
+            data = bio.reader.get_image_dask_data(native_order).rechunk(shard_shape)
             region = tuple(
                 slice(c * sh, min((c + 1) * sh, shape0[ax]))
-                for ax, (c, sh) in enumerate(zip(coords, shard0))
+                for ax, (c, sh) in enumerate(zip(coords, shard_shape))
             )
-            # Compute on the calling thread: CZI readers are not thread-safe,
-            # so all reads must be serialized here before writes are parallelized.
-            return region, data_all[region].compute()
+            np_shard = data[region].compute()
+            writer.write_region(np_shard, region, lock=False)
 
-        # First write initializes the zarr store (not thread-safe); remaining
-        # writes are safe to parallelize since the store is already open.
-        first, *rest = all_coords
-        write_one(make_region(first))
-
-        if rest:
-            from collections import deque
-
-            with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                # Pipeline: read on main thread (serialized, CZI-safe), write
-                # in pool (parallel).  Cap in-flight futures to max_workers so
-                # at most max_workers shard numpy arrays live in memory at once.
-                pending: deque = deque()
-                for coords in rest:
-                    while len(pending) >= max_workers:
-                        pending.popleft().result()
-                    pending.append(pool.submit(write_one, make_region(coords)))
-                for f in pending:
-                    f.result()
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(read_and_write, c) for c in all_coords]
+            for f in futures:
+                f.result()
 
     # -------------------------------------------------------------------------
     # Public
@@ -563,18 +546,15 @@ class OmeZarrConverter:
             )
 
             if _use_region_write:
-                # Rechunk to shard boundaries so each write_region call computes
-                # only its own shard's data.  Without this, a dask graph that
-                # isn't naturally aligned to shard regions (e.g. a timelapse CZI
-                # with T-interleaved storage) will re-read far more data than
-                # needed for each shard, serializing what should be parallel I/O.
-                shard0 = writer.shards_per_level[0]
-                data_all = data_all.rechunk(shard0)
-
-            if _use_region_write:
                 assert self._max_write_workers is not None
+                shard0 = writer.shards_per_level[0]
                 self._write_by_region(
-                    writer, data_all, max_workers=self._max_write_workers
+                    writer,
+                    self.source,
+                    native_order,
+                    scene_index,
+                    shard0,
+                    max_workers=self._max_write_workers,
                 )
             elif has_t and t_total > 1:
                 base_t_src = self._start_t_src or 0
