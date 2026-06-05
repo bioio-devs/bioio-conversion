@@ -138,7 +138,8 @@ _PYRAMID_CASES = [
         [
             # Reader-native XYZ ordering: Z is rightmost so fills first, then Y,
             # then X is split by the budget.  Shard packs X-chunks to cover full X.
-            # Proportional path: L2 X-shard (1250) exceeds level X=625 → still 1 shard.
+            # Proportional path: L2 X-shard is capped at ceil(625/625)*625=625
+            # (would otherwise be 1250, exceeding the single-X-shard extent).
             _lvl(
                 shape=(2500, 1500, 10),
                 chunk_shape=(559, 1500, 10),
@@ -154,7 +155,7 @@ _PYRAMID_CASES = [
             _lvl(
                 shape=(625, 375, 10),
                 chunk_shape=(625, 375, 10),
-                shard_shape=(1250, 375, 10),
+                shard_shape=(625, 375, 10),
                 atlas_fits=True,
             ),
         ],
@@ -241,8 +242,9 @@ _PYRAMID_CASES = [
         [
             # Z >> min(X,Y): pyramid halves Z first (3×), then switches to XY.
             # Demonstrates the min(X,Y)≥Z branch in _build_pyramid_shapes.
-            # Z chunk changes at L3 (125 < 139), so proportional Z shard rounds
-            # up to 250 to remain a chunk multiple.
+            # At L3 chunk_Z changes from 139 → 125 (full Z fits in chunk budget).
+            # Proportional would give _round_to_multiple(139, 125)=250, but the
+            # coverage cap clamps to ceil(125/125)*125=125, keeping shard_Z=125.
             _lvl(
                 shape=(4, 1000, 200, 300),
                 chunk_shape=(1, 139, 200, 300),
@@ -264,13 +266,13 @@ _PYRAMID_CASES = [
             _lvl(
                 shape=(4, 125, 200, 300),
                 chunk_shape=(1, 125, 200, 300),
-                shard_shape=(4, 250, 200, 300),
+                shard_shape=(4, 125, 200, 300),
                 atlas_fits=False,
             ),
             _lvl(
                 shape=(4, 125, 100, 150),
                 chunk_shape=(1, 125, 100, 150),
-                shard_shape=(4, 250, 100, 150),
+                shard_shape=(4, 125, 100, 150),
                 atlas_fits=True,
             ),
         ],
@@ -280,9 +282,9 @@ _PYRAMID_CASES = [
         [
             # Same spatial structure as the CZYX case above, with T and C.
             # shard_Z_0 = 8 × 139 = 1112 already exceeds shape_Z = 1000, so
-            # n_shards_Z = 1 throughout.  At L3 chunk_Z changes from 139 → 125
-            # (full Z fits in the chunk budget); _round_to_multiple(139, 125) = 250
-            # so shard_Z jumps to 250, but ceil(125/250) = 1 = n_shards_0_Z. ✓
+            # n_shards_Z = 1 throughout.  At L3 chunk_Z changes from 139 → 125;
+            # coverage cap clamps shard_Z to ceil(125/125)*125 = 125 instead of
+            # letting _round_to_multiple(139, 125) = 250 produce a phantom Z-chunk.
             _lvl(
                 shape=(5, 2, 1000, 200, 300),
                 chunk_shape=(1, 1, 139, 200, 300),
@@ -304,13 +306,13 @@ _PYRAMID_CASES = [
             _lvl(
                 shape=(5, 2, 125, 200, 300),
                 chunk_shape=(1, 1, 125, 200, 300),
-                shard_shape=(5, 2, 250, 200, 300),
+                shard_shape=(5, 2, 125, 200, 300),
                 atlas_fits=False,
             ),
             _lvl(
                 shape=(5, 2, 125, 100, 150),
                 chunk_shape=(1, 1, 125, 100, 150),
-                shard_shape=(5, 2, 250, 100, 150),
+                shard_shape=(5, 2, 125, 100, 150),
                 atlas_fits=True,
             ),
         ],
@@ -486,9 +488,10 @@ _PYRAMID_CASES = [
         [
             # XY plane (5000×5000 uint16 = 50 MB) exceeds 16 MiB limit.
             # X is rightmost so X fills fully (5000); Y is split to 1677.
-            # The shard packs all 3 Y-chunks to cover the full Y extent.
-            # Proportional path: L1 Y-shard (5000) and L2 Y-shard (2500) keep
-            # n_shards_Y=1 at every level.
+            # L0 shard packs all 3 Y-chunks → shard_Y=5031 > shape_Y=5000.
+            # Coverage cap clamps L1 shard_Y to ceil(2500/2500)*2500=2500
+            # and L2 shard_Y to 1250 (would otherwise compound to 5000/2500).
+            # n_shards_Y=1 is preserved at every level.
             _lvl(
                 shape=(5000, 5000),
                 chunk_shape=(1677, 5000),
@@ -498,13 +501,13 @@ _PYRAMID_CASES = [
             _lvl(
                 shape=(2500, 2500),
                 chunk_shape=(2500, 2500),
-                shard_shape=(5000, 2500),
+                shard_shape=(2500, 2500),
                 atlas_fits=False,
             ),
             _lvl(
                 shape=(1250, 1250),
                 chunk_shape=(1250, 1250),
-                shard_shape=(2500, 1250),
+                shard_shape=(1250, 1250),
                 atlas_fits=True,
             ),
         ],
@@ -514,6 +517,7 @@ _PYRAMID_CASES = [
         [
             # Same spatial data, reversed dim order.
             # Y is rightmost so Y fills fully (5000); X is split to 1677.
+            # Coverage cap applies same as YX case above.
             _lvl(
                 shape=(5000, 5000),
                 chunk_shape=(1677, 5000),
@@ -523,13 +527,13 @@ _PYRAMID_CASES = [
             _lvl(
                 shape=(2500, 2500),
                 chunk_shape=(2500, 2500),
-                shard_shape=(5000, 2500),
+                shard_shape=(2500, 2500),
                 atlas_fits=False,
             ),
             _lvl(
                 shape=(1250, 1250),
                 chunk_shape=(1250, 1250),
-                shard_shape=(2500, 1250),
+                shard_shape=(1250, 1250),
                 atlas_fits=True,
             ),
         ],

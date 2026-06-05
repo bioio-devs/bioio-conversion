@@ -115,6 +115,13 @@ def _proportional_shard(
     shards per axis constant across all pyramid levels, which is required for
     safe lock-free region writes via ``write_region(lock=False)``.
 
+    The result is additionally capped at the minimum chunk-multiple that covers
+    the actual axis extent (``ceil(shape[ax] / chunk[ax]) * chunk[ax]``).
+    Without this cap, an overrun at level 0 (where the shard is a chunk-multiple
+    that exceeds the real dimension) propagates and compounds at lower levels,
+    producing shards with phantom overflow chunks that can never be filled — a
+    region write would therefore always produce an incomplete shard.
+
     Parameters
     ----------
     shape
@@ -132,12 +139,15 @@ def _proportional_shard(
         In the same axis order and length as ``shape``.
     """
     return tuple(
-        _round_to_multiple(
-            max(
+        min(
+            _round_to_multiple(
+                max(
+                    chunk_shape[ax],
+                    round(reference_shard[ax] * shape[ax] / reference_shape[ax]),
+                ),
                 chunk_shape[ax],
-                round(reference_shard[ax] * shape[ax] / reference_shape[ax]),
             ),
-            chunk_shape[ax],
+            _round_to_multiple(shape[ax], chunk_shape[ax]),
         )
         for ax in range(len(shape))
     )
