@@ -544,6 +544,15 @@ class OmeZarrConverter:
             )
 
             if _use_region_write:
+                # Rechunk to shard boundaries so each write_region call computes
+                # only its own shard's data.  Without this, a dask graph that
+                # isn't naturally aligned to shard regions (e.g. a timelapse CZI
+                # with T-interleaved storage) will re-read far more data than
+                # needed for each shard, serializing what should be parallel I/O.
+                shard0 = writer.shards_per_level[0]
+                data_all = data_all.rechunk(shard0)
+
+            if _use_region_write:
                 assert self._max_write_workers is not None
                 self._write_by_region(
                     writer, data_all, max_workers=self._max_write_workers
