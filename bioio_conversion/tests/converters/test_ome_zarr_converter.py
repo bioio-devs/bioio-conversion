@@ -321,6 +321,52 @@ def test_v3_region_write_pixel_correctness(
 
 
 @pytest.mark.parametrize(
+    "filename, scenes_input",
+    [
+        ("s_3_t_1_c_3_z_5.czi", 0),
+        ("s_3_t_1_c_3_z_5.ome.tiff", 0),
+    ],
+    ids=["czi", "tiff"],
+)
+def test_multiprocess_conversion_pixel_correctness(
+    tmp_path: pathlib.Path,
+    filename: str,
+    scenes_input: int,
+) -> None:
+    """
+    With n_workers>1, shards are written by separate processes. Each worker
+    attaches to the store created by the parent and writes a disjoint shard;
+    the result must still match the source pixel-for-pixel.
+
+    A small shard_limit_bytes forces multiple shards so the process pool is
+    actually exercised.
+    """
+    src_path = LOCAL_RESOURCES_DIR / filename
+
+    conv = OmeZarrConverter(
+        source=str(src_path),
+        destination=str(tmp_path),
+        name="mp_correct",
+        scenes=scenes_input,
+        zarr_format=3,
+        shard_limit_bytes=_TEST_SHARD_LIMIT,
+        n_workers=2,
+    )
+    conv.convert()
+
+    store_path = tmp_path / "mp_correct.ome.zarr"
+    assert store_path.exists()
+
+    bio_in = BioImage(str(src_path)).reader
+    bio_in.set_scene(scenes_input)
+    bio_out = BioImage(str(store_path)).reader
+    bio_out.set_scene(0)
+
+    assert bio_in.shape == bio_out.shape
+    assert_array_equal(bio_out.get_image_data(), bio_in.get_image_data())
+
+
+@pytest.mark.parametrize(
     "shape, dims",
     [
         # 4 T-shards, 1 spatial shard per level

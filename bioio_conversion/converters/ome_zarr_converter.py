@@ -1,7 +1,7 @@
 import itertools
 import re
 import warnings
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -16,6 +16,64 @@ from zarr.codecs import BloscCodec
 
 from ..cluster import Cluster
 from ..sharding import _build_pyramid_shapes, _choose_pyramid_layout
+
+# Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.
+_Bounds = Tuple[Tuple[int, int], ...]
+
+
+def _write_shard_process(
+    args: Tuple[str, str, str, int, bool, str, int, _Bounds, _Bounds],
+) -> None:
+    """
+    Read one shard from the source and write it to an already-initialized
+    OME-Zarr store. Module-level and primitive-only so it is picklable and can
+    run in a separate process.
+
+    The write phase (downsample + Blosc compression + zarr shard assembly) is
+    largely GIL-bound, so process-based parallelism — not threads — is what
+    actually scales it. Workers attach to the existing store and only call
+    ``write_region``; the store is created once by the parent before dispatch,
+    and every worker writes a disjoint shard, so there is no coordination or
+    read-modify-write between processes.
+
+    args
+        ``(source, store_path, native_order, scene_index, use_fast_czi,
+        out_dtype_str, n_levels, src_bounds, dest_bounds)``.
+    """
+    import zarr
+
+    (
+        source,
+        store_path,
+        native_order,
+        scene_index,
+        use_fast_czi,
+        out_dtype_str,
+        n_levels,
+        src_bounds,
+        dest_bounds,
+    ) = args
+
+    src_region = tuple(slice(lo, hi) for lo, hi in src_bounds)
+    dest_region = tuple(slice(lo, hi) for lo, hi in dest_bounds)
+    out_dtype = np.dtype(out_dtype_str)
+
+    if use_fast_czi:
+        shard_data = OmeZarrConverter._read_region_czi(
+            source, src_region, native_order, scene_index, out_dtype
+        )
+    else:
+        bio = BioImage(source)
+        bio.set_scene(scene_index)
+        shard_data = bio.reader.get_image_dask_data(native_order)[src_region].compute()
+
+    # Attach to the existing store. write_region only needs ``datasets`` (the
+    # per-level zarr arrays), so bypass __init__/initialize() to avoid
+    # re-creating arrays (which would race across processes).
+    root = zarr.open_group(store_path, mode="r+")
+    writer = OMEZarrWriter.__new__(OMEZarrWriter)
+    writer.datasets = [root[str(i)] for i in range(n_levels)]
+    writer.write_region(shard_data, dest_region)
 
 
 class OmeZarrConverter:
@@ -147,10 +205,15 @@ class OmeZarrConverter:
             If True, automatically spin up a local Dask cluster with
             8 workers (using `Cluster(n_workers=8).start()`) before any
             conversion.
-        n_workers : Optional[int]
-            Maximum number of concurrent shard writes (auto-layout path only).
-            Each worker holds one shard in memory, so this bounds peak RAM use.
-            Number of concurrent shard workers. Default: 1 (single-threaded).
+        n_workers : int
+            Number of worker *processes* for shard writes (auto-layout path).
+            The write phase (downsample + compression + shard assembly) is
+            GIL-bound, so processes — not threads — are used to parallelize it.
+            ``1`` (default) runs inline with no pool. Each worker holds roughly
+            one shard plus downsample intermediates in memory, so peak RAM is
+            about ``n_workers * shard_limit_bytes * ~1.5``; size it to the
+            machine. On a single node, gains are typically capped by disk write
+            bandwidth before CPU.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
             Reduce for machines with less RAM or to force smaller shards in tests.
@@ -611,38 +674,47 @@ class OmeZarrConverter:
                 all_bounds = list(itertools.product(*per_ax))
                 n_workers = self._n_workers
                 use_fast_czi = self._czi_fast_read_ok(self.source)
+                n_levels = len(writer.datasets)
+                out_dtype_str = str(self.output_dtype)
 
-                def _write_shard(bounds: Tuple[Tuple[int, int], ...]) -> None:
-                    dest_region = tuple(slice(lo, hi) for lo, hi in bounds)
+                # Build a picklable task per shard. src bounds shift by t_offset
+                # so source T aligns with destination T.
+                tasks: List[
+                    Tuple[str, str, str, int, bool, str, int, _Bounds, _Bounds]
+                ] = []
+                for bounds in all_bounds:
                     if t_offset and t_ax is not None:
-                        src_slices = list(dest_region)
-                        src_slices[t_ax] = slice(
-                            dest_region[t_ax].start + t_offset,
-                            dest_region[t_ax].stop + t_offset,
+                        src_list = list(bounds)
+                        src_list[t_ax] = (
+                            bounds[t_ax][0] + t_offset,
+                            bounds[t_ax][1] + t_offset,
                         )
-                        src_region: Tuple[slice, ...] = tuple(src_slices)
+                        src_bounds: _Bounds = tuple(src_list)
                     else:
-                        src_region = dest_region
-                    if use_fast_czi:
-                        # Direct held-open read — avoids the per-plane dask graph.
-                        shard_data = self._read_region_czi(
+                        src_bounds = bounds
+                    tasks.append(
+                        (
                             self.source,
-                            src_region,
+                            str(out_path),
                             native_order,
                             scene_index,
-                            self.output_dtype,
+                            use_fast_czi,
+                            out_dtype_str,
+                            n_levels,
+                            src_bounds,
+                            bounds,
                         )
-                    else:
-                        thread_bio = BioImage(self.source)
-                        thread_bio.set_scene(scene_index)
-                        thread_data = thread_bio.reader.get_image_dask_data(
-                            native_order
-                        )
-                        shard_data = thread_data[src_region].compute()
-                    writer.write_region(shard_data, dest_region)
+                    )
 
-                with ThreadPoolExecutor(max_workers=n_workers) as pool:
-                    list(pool.map(_write_shard, all_bounds))
+                # The write phase is GIL-bound, so use processes (not threads)
+                # to parallelize. The parent has already created the store via
+                # writer.initialize(); each worker writes a disjoint shard.
+                if n_workers > 1:
+                    with ProcessPoolExecutor(max_workers=n_workers) as pool:
+                        list(pool.map(_write_shard_process, tasks))
+                else:
+                    for task in tasks:
+                        _write_shard_process(task)
 
             else:
                 # Fallback: T-batched single-threaded writes.
