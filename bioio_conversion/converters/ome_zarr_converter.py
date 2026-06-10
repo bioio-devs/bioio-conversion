@@ -315,6 +315,105 @@ class OmeZarrConverter:
         return result
 
     @staticmethod
+    def _czi_fast_read_ok(source: str) -> bool:
+        """
+        Whether ``source`` supports the direct held-open CZI read path.
+
+        True only for ``.czi`` files whose pixel type is not BGR (BGR adds a
+        trailing samples axis the fast path does not assemble; those fall back
+        to the dask reader).
+        """
+        if not source.lower().endswith(".czi"):
+            return False
+        try:
+            from pylibCZIrw import czi as pylibczi
+
+            with pylibczi.open_czi(source) as f:
+                ptypes = f.pixel_types
+            return not any("Bgr" in str(v) for v in ptypes.values())
+        except Exception:
+            return False
+
+    @staticmethod
+    def _read_region_czi(
+        source: str,
+        src_region: Tuple[slice, ...],
+        native_order: str,
+        scene_index: int,
+        out_dtype: "np.dtype[Any]",
+    ) -> np.ndarray:
+        """
+        Read a hyper-rectangular region directly from a CZI, holding the file
+        open for the whole region.
+
+        This bypasses ``reader.get_image_dask_data().compute()``, which builds a
+        per-plane dask graph (one chunk per YX slice). On a typical timelapse
+        that graph is tens of thousands of chunks: ~10 s just to construct and
+        ~15x slower to read than streaming planes from a single open handle.
+
+        Self-contained — takes only primitives — so it can later be lifted
+        verbatim into the bioio-czi reader as a ``read_region`` method.
+
+        Parameters
+        ----------
+        source
+            Path to the CZI file.
+        src_region
+            Per-axis slices in ``native_order`` describing the region to read.
+        native_order
+            Reader-native dimension order (e.g. ``"TCZYX"``); must contain Y, X.
+        scene_index
+            Index into the file's scene list (ignored for scene-less files).
+        out_dtype
+            dtype of the returned array.
+
+        Returns
+        -------
+        np.ndarray
+            The region, shaped to ``src_region`` in ``native_order``.
+        """
+        from pylibCZIrw import czi as pylibczi
+
+        yi, xi = native_order.index("Y"), native_order.index("X")
+        non_yx = [i for i in range(len(native_order)) if i not in (yi, xi)]
+        out_shape = tuple(
+            src_region[i].stop - src_region[i].start for i in range(len(native_order))
+        )
+        arr = np.empty(out_shape, dtype=out_dtype)
+
+        with pylibczi.open_czi(source) as f:
+            rects = f.scenes_bounding_rectangle_no_pyramid
+            scene: Optional[int]
+            if len(rects) == 0:
+                # Scene-less file: pixel origin still need not be (0, 0) in CZI
+                # coordinates, so take it from the total bounding box.
+                scene = None
+                tbox = f.total_bounding_box_no_pyramid
+                base_x, base_y = tbox["X"][0], tbox["Y"][0]
+            else:
+                scene = list(rects.keys())[scene_index]
+                rect = rects[scene]
+                base_x, base_y = rect.x, rect.y
+
+            # pylibCZIrw read() ROI is absolute (x, y, w, h); add the scene
+            # origin so XY-split shards land on the right pixels.
+            read_roi = (
+                base_x + src_region[xi].start,
+                base_y + src_region[yi].start,
+                src_region[xi].stop - src_region[xi].start,
+                src_region[yi].stop - src_region[yi].start,
+            )
+            ranges = [range(src_region[i].start, src_region[i].stop) for i in non_yx]
+            for combo in itertools.product(*ranges):
+                plane = {native_order[non_yx[k]]: combo[k] for k in range(len(non_yx))}
+                res = np.squeeze(f.read(scene=scene, plane=plane, roi=read_roi))
+                out_idx: List[Any] = [slice(None)] * len(native_order)
+                for k in range(len(non_yx)):
+                    out_idx[non_yx[k]] = combo[k] - src_region[non_yx[k]].start
+                arr[tuple(out_idx)] = res
+        return arr
+
+    @staticmethod
     def _ensure_per_level_shapes(
         level_shapes_spec: MultiResolutionShapeSpec,
     ) -> List[Tuple[int, ...]]:
@@ -511,6 +610,7 @@ class OmeZarrConverter:
                 ]
                 all_bounds = list(itertools.product(*per_ax))
                 n_workers = self._n_workers
+                use_fast_czi = self._czi_fast_read_ok(self.source)
 
                 def _write_shard(bounds: Tuple[Tuple[int, int], ...]) -> None:
                     dest_region = tuple(slice(lo, hi) for lo, hi in bounds)
@@ -523,10 +623,22 @@ class OmeZarrConverter:
                         src_region: Tuple[slice, ...] = tuple(src_slices)
                     else:
                         src_region = dest_region
-                    thread_bio = BioImage(self.source)
-                    thread_bio.set_scene(scene_index)
-                    thread_data = thread_bio.reader.get_image_dask_data(native_order)
-                    shard_data = thread_data[src_region].compute()
+                    if use_fast_czi:
+                        # Direct held-open read — avoids the per-plane dask graph.
+                        shard_data = self._read_region_czi(
+                            self.source,
+                            src_region,
+                            native_order,
+                            scene_index,
+                            self.output_dtype,
+                        )
+                    else:
+                        thread_bio = BioImage(self.source)
+                        thread_bio.set_scene(scene_index)
+                        thread_data = thread_bio.reader.get_image_dask_data(
+                            native_order
+                        )
+                        shard_data = thread_data[src_region].compute()
                     writer.write_region(shard_data, dest_region)
 
                 with ThreadPoolExecutor(max_workers=n_workers) as pool:
