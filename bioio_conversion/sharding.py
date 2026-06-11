@@ -23,7 +23,7 @@ def _choose_zarr_layout(
 
     Intended for level-0 of a multi-resolution pyramid.  For lower levels use
     ``_proportional_shard`` to derive a shard that keeps the number of shards
-    per axis constant, which is required for lock-free region writes.
+    per axis constant, which is required for safe parallel region writes.
 
     Parameters
     ----------
@@ -100,7 +100,7 @@ def _proportional_shard(
     Each axis is scaled as ``reference_shard[ax] * shape[ax] / reference_shape[ax]``
     then rounded up to the nearest chunk multiple.  This keeps the number of
     shards per axis constant across all pyramid levels, which is required for
-    safe lock-free region writes via ``write_region(lock=False)``.
+    safe parallel region writes via ``write_region``.
 
     The result is additionally capped at the minimum chunk-multiple that covers
     the actual axis extent (``ceil(shape[ax] / chunk[ax]) * chunk[ax]``).
