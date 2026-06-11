@@ -199,16 +199,8 @@ class OmeZarrConverter:
             conversion.
         n_workers : int
             Number of worker *processes* for shard writes (auto-layout path).
-            The write phase (downsample + compression + shard assembly) is
-            GIL-bound, so processes — not threads — are used to parallelize it.
-            ``1`` (default) runs inline with no pool. Each worker holds roughly
-            one shard plus downsample intermediates in memory, so peak RAM is
-            about ``n_workers * shard_limit_bytes * ~1.5``; size it to the
-            machine. On a single node, gains are typically capped by disk write
-            bandwidth before CPU.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
-            Reduce for machines with less RAM or to force smaller shards in tests.
         """
         self.source = source
         self.destination = destination or str(Path.cwd())
