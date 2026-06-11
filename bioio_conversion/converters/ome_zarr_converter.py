@@ -27,12 +27,18 @@ _Bounds = Tuple[Tuple[int, int], ...]
 
 
 def _write_shard_process(
-    args: Tuple[str, str, str, int, str, _Bounds, _Bounds],
+    source: str,
+    store_path: str,
+    native_order: str,
+    scene_index: int,
+    out_dtype_str: str,
+    src_bounds: _Bounds,
+    dest_bounds: _Bounds,
 ) -> None:
     """
     Read one shard from the source and write it to an already-initialized
-    OME-Zarr store. Module-level and primitive-only so it is picklable and can
-    run in a separate process.
+    OME-Zarr store. Module-level and primitive-only (so its arguments pickle
+    cleanly) to run in a separate process.
 
     The write phase (downsample + Blosc compression + zarr shard assembly) is
     largely GIL-bound, so process-based parallelism — not threads — is what
@@ -40,21 +46,7 @@ def _write_shard_process(
     ``write_region``; the store is created once by the parent before dispatch,
     and every worker writes a disjoint shard, so there is no coordination or
     read-modify-write between processes.
-
-    args
-        ``(source, store_path, native_order, scene_index, out_dtype_str,
-        src_bounds, dest_bounds)``.
     """
-    (
-        source,
-        store_path,
-        native_order,
-        scene_index,
-        out_dtype_str,
-        src_bounds,
-        dest_bounds,
-    ) = args
-
     src_region = tuple(slice(lo, hi) for lo, hi in src_bounds)
     dest_region = tuple(slice(lo, hi) for lo, hi in dest_bounds)
     out_dtype = np.dtype(out_dtype_str)
@@ -581,9 +573,9 @@ class OmeZarrConverter:
                 n_workers = self._n_workers
                 out_dtype_str = str(self.output_dtype)
 
-                # Build a picklable task per shard. src bounds shift by t_offset
-                # so source T aligns with destination T.
-                tasks: List[Tuple[str, str, str, int, str, _Bounds, _Bounds]] = []
+                # Per-shard (src_bounds, dest_bounds). src bounds shift by
+                # t_offset so source T aligns with destination T.
+                shard_bounds: List[Tuple[_Bounds, _Bounds]] = []
                 for bounds in all_bounds:
                     if t_offset and t_ax is not None:
                         src_list = list(bounds)
@@ -594,27 +586,39 @@ class OmeZarrConverter:
                         src_bounds: _Bounds = tuple(src_list)
                     else:
                         src_bounds = bounds
-                    tasks.append(
-                        (
-                            self.source,
-                            str(out_path),
-                            native_order,
-                            scene_index,
-                            out_dtype_str,
-                            src_bounds,
-                            bounds,
-                        )
-                    )
+                    shard_bounds.append((src_bounds, bounds))
 
                 # The write phase is GIL-bound, so use processes (not threads)
                 # to parallelize. The parent has already created the store via
                 # writer.initialize(); each worker writes a disjoint shard.
                 if n_workers > 1:
                     with ProcessPoolExecutor(max_workers=n_workers) as pool:
-                        list(pool.map(_write_shard_process, tasks))
+                        futures = [
+                            pool.submit(
+                                _write_shard_process,
+                                self.source,
+                                str(out_path),
+                                native_order,
+                                scene_index,
+                                out_dtype_str,
+                                src_bounds,
+                                dest_bounds,
+                            )
+                            for src_bounds, dest_bounds in shard_bounds
+                        ]
+                        for future in futures:
+                            future.result()  # surface any worker exception
                 else:
-                    for task in tasks:
-                        _write_shard_process(task)
+                    for src_bounds, dest_bounds in shard_bounds:
+                        _write_shard_process(
+                            self.source,
+                            str(out_path),
+                            native_order,
+                            scene_index,
+                            out_dtype_str,
+                            src_bounds,
+                            dest_bounds,
+                        )
 
             else:
                 # Fallback: T-batched single-threaded writes.
