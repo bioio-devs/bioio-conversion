@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numcodecs
 import numpy as np
-import zarr
 from bioio import BioImage
 from bioio_base.dimensions import DimensionNames
 from bioio_ome_zarr.writers import Channel, OMEZarrWriter
@@ -28,7 +27,7 @@ _Bounds = Tuple[Tuple[int, int], ...]
 
 
 def _write_shard_process(
-    args: Tuple[str, str, str, int, str, int, _Bounds, _Bounds],
+    args: Tuple[str, str, str, int, str, _Bounds, _Bounds],
 ) -> None:
     """
     Read one shard from the source and write it to an already-initialized
@@ -44,7 +43,7 @@ def _write_shard_process(
 
     args
         ``(source, store_path, native_order, scene_index, out_dtype_str,
-        n_levels, src_bounds, dest_bounds)``.
+        src_bounds, dest_bounds)``.
     """
     (
         source,
@@ -52,7 +51,6 @@ def _write_shard_process(
         native_order,
         scene_index,
         out_dtype_str,
-        n_levels,
         src_bounds,
         dest_bounds,
     ) = args
@@ -75,12 +73,9 @@ def _write_shard_process(
         out_dtype, copy=False
     )
 
-    # Attach to the existing store. write_region only needs ``datasets`` (the
-    # per-level zarr arrays), so bypass __init__/initialize() to avoid
-    # re-creating arrays (which would race across processes).
-    root = zarr.open_group(store_path, mode="r+")
-    writer = OMEZarrWriter.__new__(OMEZarrWriter)
-    writer.datasets = [root[str(i)] for i in range(n_levels)]
+    # Attach to the store the parent already initialized and write this shard.
+    # Every worker writes a disjoint shard, so the writes need no coordination.
+    writer = OMEZarrWriter.open(store_path)
     writer.write_region(shard_data, dest_region)
 
 
@@ -584,12 +579,11 @@ class OmeZarrConverter:
                 ]
                 all_bounds = list(itertools.product(*per_ax))
                 n_workers = self._n_workers
-                n_levels = len(writer.datasets)
                 out_dtype_str = str(self.output_dtype)
 
                 # Build a picklable task per shard. src bounds shift by t_offset
                 # so source T aligns with destination T.
-                tasks: List[Tuple[str, str, str, int, str, int, _Bounds, _Bounds]] = []
+                tasks: List[Tuple[str, str, str, int, str, _Bounds, _Bounds]] = []
                 for bounds in all_bounds:
                     if t_offset and t_ax is not None:
                         src_list = list(bounds)
@@ -607,7 +601,6 @@ class OmeZarrConverter:
                             native_order,
                             scene_index,
                             out_dtype_str,
-                            n_levels,
                             src_bounds,
                             bounds,
                         )
