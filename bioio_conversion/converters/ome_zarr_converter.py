@@ -51,22 +51,19 @@ def _write_shard_process(
     dest_region = tuple(slice(lo, hi) for lo, hi in dest_bounds)
     out_dtype = np.dtype(out_dtype_str)
 
-    # Read the shard via the reader's get_image_data slicing. For readers with
-    # an efficient region path (e.g. bioio-czi, which routes slice selections to
-    # a held-open read of only the requested planes) this reads just the
-    # requested bytes; others fall back to the base read-whole-then-slice.
+    # New image instance to access data per process
     bio = BioImage(source)
     bio.set_scene(scene_index)
     region_kwargs = {
         native_order[i]: slice(src_region[i].start, src_region[i].stop)
         for i in range(len(native_order))
     }
+    # Read the shard via the reader's get_image_data slicing.
     shard_data = bio.reader.get_image_data(native_order, **region_kwargs).astype(
         out_dtype, copy=False
     )
 
     # Attach to the store the parent already initialized and write this shard.
-    # Every worker writes a disjoint shard, so the writes need no coordination.
     writer = OMEZarrWriter.open(store_path)
     writer.write_region(shard_data, dest_region)
 
@@ -556,7 +553,6 @@ class OmeZarrConverter:
             t_ax = dims.index("T") if has_t else None
             base_t_src = self._start_t_src or 0
             base_t_dest = self._start_t_dest or 0
-            t_offset = base_t_src - base_t_dest
 
             writer.initialize()
 
@@ -573,20 +569,9 @@ class OmeZarrConverter:
                 n_workers = self._n_workers
                 out_dtype_str = str(self.output_dtype)
 
-                # Per-shard (src_bounds, dest_bounds). src bounds shift by
-                # t_offset so source T aligns with destination T.
-                shard_bounds: List[Tuple[_Bounds, _Bounds]] = []
-                for bounds in all_bounds:
-                    if t_offset and t_ax is not None:
-                        src_list = list(bounds)
-                        src_list[t_ax] = (
-                            bounds[t_ax][0] + t_offset,
-                            bounds[t_ax][1] + t_offset,
-                        )
-                        src_bounds: _Bounds = tuple(src_list)
-                    else:
-                        src_bounds = bounds
-                    shard_bounds.append((src_bounds, bounds))
+                shard_bounds: List[Tuple[_Bounds, _Bounds]] = [
+                    (bounds, bounds) for bounds in all_bounds
+                ]
 
                 # The write phase is GIL-bound, so use processes (not threads)
                 # to parallelize. The parent has already created the store via
