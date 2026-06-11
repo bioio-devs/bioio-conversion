@@ -6,6 +6,11 @@ from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_targe
 
 _ATLAS_SIZE = 2048
 
+# Default uncompressed size budgets for the Zarr v3 layout. Single source of
+# truth so callers (e.g. the converter) don't re-hardcode the literals.
+DEFAULT_CHUNK_LIMIT_BYTES = 16 * 1024**2
+DEFAULT_SHARD_LIMIT_BYTES = 4 * 1024**3
+
 
 def _round_to_multiple(value: int, multiple: int) -> int:
     return ((value + multiple - 1) // multiple) * multiple
@@ -15,8 +20,8 @@ def _choose_zarr_layout(
     shape: Tuple[int, ...],
     dtype: Union[str, "np.dtype[Any]"],
     dims: str,
-    chunk_limit_bytes: int = 16 * 1024**2,
-    shard_limit_bytes: int = 4 * 1024**3,
+    chunk_limit_bytes: int = DEFAULT_CHUNK_LIMIT_BYTES,
+    shard_limit_bytes: int = DEFAULT_SHARD_LIMIT_BYTES,
 ) -> Tuple[Tuple[int, ...], Tuple[int, ...]]:
     """
     Compute chunk and shard shapes for a Zarr v3 OME-Zarr array.
@@ -157,8 +162,8 @@ def _choose_pyramid_layout(
     level_shapes: List[Tuple[int, ...]],
     dtype: Union[str, "np.dtype[Any]"],
     dims: str,
-    chunk_limit_bytes: int = 16 * 1024**2,
-    shard_limit_bytes: int = 4 * 1024**3,
+    chunk_limit_bytes: int = DEFAULT_CHUNK_LIMIT_BYTES,
+    shard_limit_bytes: int = DEFAULT_SHARD_LIMIT_BYTES,
 ) -> Tuple[List[Tuple[int, ...]], List[Tuple[int, ...]]]:
     """
     Compute chunk and shard shapes for every level of a multi-resolution pyramid.

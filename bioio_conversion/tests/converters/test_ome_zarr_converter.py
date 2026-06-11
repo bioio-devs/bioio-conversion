@@ -1,19 +1,13 @@
-import itertools
 import os
 import pathlib
 import re
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Tuple, Union
 
-import numpy as np
 import pytest
 from bioio import BioImage
-from bioio_ome_zarr.writers import OMEZarrWriter
 from numpy.testing import assert_array_equal
 
 from bioio_conversion.converters.ome_zarr_converter import OmeZarrConverter
-from bioio_conversion.sharding import _build_pyramid_shapes, _choose_pyramid_layout
 
 from ..conftest import LOCAL_RESOURCES_DIR
 
@@ -21,8 +15,6 @@ from ..conftest import LOCAL_RESOURCES_DIR
 # Forcing one-chunk-per-shard exercises the concurrent write path with multiple
 # shards even on tiny images where a 4 GiB shard would hold the entire array.
 _TEST_SHARD_LIMIT = 256 * 1024  # 256 KiB — used for integration tests
-# Tiny limit: forces shard == one chunk so every dimension axis gets sharded separately.
-_TINY_SHARD_LIMIT = 4 * 1024  # 4 KiB — used for concurrency tests on small mock arrays
 
 
 @pytest.mark.parametrize(
@@ -269,96 +261,44 @@ def test_zarr_explicit_level_shapes(
 
 
 # ---------------------------------------------------------------------------
-# Concurrent region-write tests
+# Conversion correctness
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "filename, scenes_input",
-    [
-        ("s_3_t_1_c_3_z_5.ome.tiff", 0),
-        ("s_3_t_1_c_3_z_5.czi", 0),
-    ],
-    ids=["tiff-tczyx", "czi-czyx"],
+    "filename",
+    ["s_3_t_1_c_3_z_5.czi", "s_3_t_1_c_3_z_5.ome.tiff"],
+    ids=["czi", "tiff"],
 )
-def test_v3_region_write_pixel_correctness(
+@pytest.mark.parametrize("n_workers", [1, 2], ids=["1proc", "2proc"])
+def test_conversion_pixel_correctness(
     tmp_path: pathlib.Path,
     filename: str,
-    scenes_input: int,
+    n_workers: int,
 ) -> None:
     """
-    OmeZarrConverter with zarr_format=3 and a small shard limit produces a
-    multi-shard store whose level-0 pixels exactly match the source image.
-
-    The small shard_limit_bytes forces ≥1 shard per chunk, exercising the
-    concurrent write_region path even on tiny test images.
+    A full conversion produces a multi-shard v3 store whose level-0 pixels
+    exactly match the source. A small shard limit forces multiple shards, and
+    parametrizing n_workers exercises both the serial and the
+    ProcessPoolExecutor dispatch branches for both CZI and TIFF.
     """
     src_path = LOCAL_RESOURCES_DIR / filename
 
-    conv = OmeZarrConverter(
+    OmeZarrConverter(
         source=str(src_path),
         destination=str(tmp_path),
         name="region_correct",
-        scenes=scenes_input,
+        scenes=0,
         zarr_format=3,
         shard_limit_bytes=_TEST_SHARD_LIMIT,
-    )
-    conv.convert()
+        n_workers=n_workers,
+    ).convert()
 
     store_path = tmp_path / "region_correct.ome.zarr"
     assert store_path.exists()
 
     bio_in = BioImage(str(src_path)).reader
-    bio_in.set_scene(scenes_input)
-    bio_out = BioImage(str(store_path)).reader
-    bio_out.set_scene(0)
-
-    assert bio_in.shape == bio_out.shape
-    assert_array_equal(
-        bio_out.get_image_data(),
-        bio_in.get_image_data(),
-    )
-
-
-@pytest.mark.parametrize(
-    "filename, scenes_input",
-    [
-        ("s_3_t_1_c_3_z_5.czi", 0),
-        ("s_3_t_1_c_3_z_5.ome.tiff", 0),
-    ],
-    ids=["czi", "tiff"],
-)
-def test_multiprocess_conversion_pixel_correctness(
-    tmp_path: pathlib.Path,
-    filename: str,
-    scenes_input: int,
-) -> None:
-    """
-    With n_workers>1, shards are written by separate processes. Each worker
-    attaches to the store created by the parent and writes a disjoint shard;
-    the result must still match the source pixel-for-pixel.
-
-    A small shard_limit_bytes forces multiple shards so the process pool is
-    actually exercised.
-    """
-    src_path = LOCAL_RESOURCES_DIR / filename
-
-    conv = OmeZarrConverter(
-        source=str(src_path),
-        destination=str(tmp_path),
-        name="mp_correct",
-        scenes=scenes_input,
-        zarr_format=3,
-        shard_limit_bytes=_TEST_SHARD_LIMIT,
-        n_workers=2,
-    )
-    conv.convert()
-
-    store_path = tmp_path / "mp_correct.ome.zarr"
-    assert store_path.exists()
-
-    bio_in = BioImage(str(src_path)).reader
-    bio_in.set_scene(scenes_input)
+    bio_in.set_scene(0)
     bio_out = BioImage(str(store_path)).reader
     bio_out.set_scene(0)
 
@@ -366,140 +306,38 @@ def test_multiprocess_conversion_pixel_correctness(
     assert_array_equal(bio_out.get_image_data(), bio_in.get_image_data())
 
 
-@pytest.mark.parametrize(
-    "shape, dims",
-    [
-        # 4 T-shards, 1 spatial shard per level
-        ((4, 1, 2, 32, 32), "TCZYX"),
-        # 1 T-shard, 2 C-shards
-        ((1, 2, 2, 32, 32), "TCZYX"),
-    ],
-    ids=["4T-shards", "2C-shards"],
-)
-def test_concurrent_region_write_matches_sequential(
-    tmp_path: pathlib.Path,
-    shape: Tuple[int, ...],
-    dims: str,
-) -> None:
+def test_multiprocess_matches_singleprocess(tmp_path: pathlib.Path) -> None:
     """
-    Writing all shards concurrently via write_region produces identical output
-    to sequential write_region at every pyramid level.
-
-    Both paths use the same downsampling logic; the only variable is whether
-    shards are written one-at-a-time or via a thread pool.  If concurrent
-    writes produce any non-determinism or shard collision the arrays will differ.
+    Concurrent lock-free shard writes (n_workers=2) must produce a byte-identical
+    store to the serial path (n_workers=1) at *every* pyramid level. num_levels
+    forces a real downsampled pyramid; if disjoint-shard writes raced or
+    collided, the downsampled levels would diverge.
     """
-    dtype = np.dtype("uint16")
-    data = (
-        np.arange(int(np.prod(shape)), dtype=dtype).reshape(shape) % np.iinfo(dtype).max
-    )
-
-    level_shapes = _build_pyramid_shapes(shape, dims)
-    chunks, shards = _choose_pyramid_layout(
-        level_shapes, dtype, dims, shard_limit_bytes=_TINY_SHARD_LIMIT
-    )
-
-    shard0 = shards[0]
-    per_ax = [
-        [(s, min(s + shard0[ax], shape[ax])) for s in range(0, shape[ax], shard0[ax])]
-        for ax in range(len(shape))
-    ]
-    all_bounds = list(itertools.product(*per_ax))
-
-    def _make_writer(store: str) -> OMEZarrWriter:
-        return OMEZarrWriter(
-            store=store,
-            level_shapes=level_shapes,
-            dtype=dtype,
-            zarr_format=3,
-            axes_names=list(dims.lower()),
-            chunk_shape=chunks,
-            shard_shape=shards,
-        )
-
-    # Reference: sequential write_region (single thread)
-    ref_writer = _make_writer(str(tmp_path / "ref.zarr"))
-    ref_writer.initialize()
-    for bounds in all_bounds:
-        region = tuple(slice(lo, hi) for lo, hi in bounds)
-        ref_writer.write_region(data[region].copy(), region)
-
-    # Under test: concurrent write_region (no lock — numpy slices are safe)
-    test_writer = _make_writer(str(tmp_path / "test.zarr"))
-    test_writer.initialize()
-
-    def _write_shard(bounds: Tuple[Tuple[int, int], ...]) -> None:
-        region = tuple(slice(lo, hi) for lo, hi in bounds)
-        shard_data = data[region].copy()
-        test_writer.write_region(shard_data, region)
-
-    n_workers = min(len(all_bounds), (os.cpu_count() or 4))
-    with ThreadPoolExecutor(max_workers=n_workers) as pool:
-        list(pool.map(_write_shard, all_bounds))
-
     import zarr
 
-    ref_grp = zarr.open_group(str(tmp_path / "ref.zarr"), mode="r")
-    test_grp = zarr.open_group(str(tmp_path / "test.zarr"), mode="r")
-    for lvl in range(len(level_shapes)):
+    src_path = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.czi"
+
+    def _convert(name: str, n_workers: int) -> str:
+        OmeZarrConverter(
+            source=str(src_path),
+            destination=str(tmp_path),
+            name=name,
+            scenes=0,
+            zarr_format=3,
+            num_levels=3,
+            shard_limit_bytes=_TEST_SHARD_LIMIT,
+            n_workers=n_workers,
+        ).convert()
+        return str(tmp_path / f"{name}.ome.zarr")
+
+    serial = zarr.open_group(_convert("serial", 1), mode="r")
+    parallel = zarr.open_group(_convert("parallel", 2), mode="r")
+
+    n_levels = len(serial)
+    assert n_levels == len(parallel) > 1, "expected a multi-level pyramid"
+    for lvl in range(n_levels):
         assert_array_equal(
-            ref_grp[str(lvl)][...],
-            test_grp[str(lvl)][...],
-            err_msg=f"Level {lvl}: concurrent differs from sequential",
-        )
-
-
-def test_concurrent_region_write_is_parallel(tmp_path: pathlib.Path) -> None:
-    """
-    With max_workers == n_shards, all shard writes are dispatched simultaneously.
-
-    A threading.Barrier with parties == n_shards proves every worker is alive
-    before any write proceeds.  If writes were sequential, the barrier would
-    time out because only one thread would ever reach it at a time.
-    """
-    shape = (4, 1, 2, 32, 32)
-    dims = "TCZYX"
-    dtype = np.dtype("uint16")
-    data = np.zeros(shape, dtype=dtype)
-
-    level_shapes = _build_pyramid_shapes(shape, dims)
-    chunks, shards = _choose_pyramid_layout(
-        level_shapes, dtype, dims, shard_limit_bytes=_TINY_SHARD_LIMIT
-    )
-
-    writer = OMEZarrWriter(
-        store=str(tmp_path / "parallel.zarr"),
-        level_shapes=level_shapes,
-        dtype=dtype,
-        zarr_format=3,
-        axes_names=list(dims.lower()),
-        chunk_shape=chunks,
-        shard_shape=shards,
-    )
-    writer.initialize()
-
-    shard0 = shards[0]
-    per_ax = [
-        [(s, min(s + shard0[ax], shape[ax])) for s in range(0, shape[ax], shard0[ax])]
-        for ax in range(len(shape))
-    ]
-    all_bounds = list(itertools.product(*per_ax))
-    n_shards = len(all_bounds)
-    assert n_shards > 1, "Test requires >1 shard; increase shape or reduce shard_limit"
-
-    barrier = threading.Barrier(n_shards, timeout=10)
-
-    def _write_shard(bounds: Tuple[Tuple[int, int], ...]) -> None:
-        region = tuple(slice(lo, hi) for lo, hi in bounds)
-        shard_data = data[region].copy()
-        barrier.wait()  # all n_shards workers must arrive before any write starts
-        writer.write_region(shard_data, region)
-
-    try:
-        with ThreadPoolExecutor(max_workers=n_shards) as pool:
-            list(pool.map(_write_shard, all_bounds))
-    except threading.BrokenBarrierError:
-        pytest.fail(
-            f"Barrier timed out with {n_shards} shards — "
-            "writes were not dispatched concurrently"
+            serial[str(lvl)][...],
+            parallel[str(lvl)][...],
+            err_msg=f"Level {lvl}: parallel differs from serial",
         )

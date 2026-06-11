@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numcodecs
 import numpy as np
+import zarr
 from bioio import BioImage
 from bioio_base.dimensions import DimensionNames
 from bioio_ome_zarr.writers import Channel, OMEZarrWriter
@@ -15,7 +16,12 @@ from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_targe
 from zarr.codecs import BloscCodec
 
 from ..cluster import Cluster
-from ..sharding import _build_pyramid_shapes, _choose_pyramid_layout
+from ..sharding import (
+    DEFAULT_CHUNK_LIMIT_BYTES,
+    DEFAULT_SHARD_LIMIT_BYTES,
+    _build_pyramid_shapes,
+    _choose_pyramid_layout,
+)
 
 # Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.
 _Bounds = Tuple[Tuple[int, int], ...]
@@ -40,8 +46,6 @@ def _write_shard_process(
         ``(source, store_path, native_order, scene_index, out_dtype_str,
         n_levels, src_bounds, dest_bounds)``.
     """
-    import zarr
-
     (
         source,
         store_path,
@@ -117,7 +121,7 @@ class OmeZarrConverter:
         dtype: Optional[Union[str, np.dtype]] = None,
         auto_dask_cluster: bool = False,
         n_workers: int = 1,
-        shard_limit_bytes: int = 4 * 1024**3,
+        shard_limit_bytes: int = DEFAULT_SHARD_LIMIT_BYTES,
     ) -> None:
         """
         Initialize an OME-Zarr converter with flexible scene selection,
@@ -483,7 +487,9 @@ class OmeZarrConverter:
                     MultiResolutionShapeSpec
                 ] = self._writer_chunk_shape
             elif _can_auto_layout:
-                chunk_limit = self._helper_memory_target_bytes or 16 * 1024**2
+                chunk_limit = (
+                    self._helper_memory_target_bytes or DEFAULT_CHUNK_LIMIT_BYTES
+                )
                 level_shapes_list = self._ensure_per_level_shapes(
                     writer_level_shapes_param
                 )
