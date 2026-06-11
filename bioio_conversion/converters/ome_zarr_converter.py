@@ -541,83 +541,110 @@ class OmeZarrConverter:
             # (8) Write — shard-aligned region writes via write_region.
             # Every call covers exactly one shard boundary at every pyramid level
             # so no shard is ever read back to be merged (no read-modify-write).
-            has_t = "t" in axis_names
-            t_ax = dims.index("T") if has_t else None
-            base_t_src = self._start_t_src or 0
-            base_t_dest = self._start_t_dest or 0
-
             writer.initialize()
 
             if _can_auto_layout:
-                shard0 = auto_shards[0]
-                per_ax = [
-                    [
-                        (s, min(s + shard0[ax], level0_shape[ax]))
-                        for s in range(0, level0_shape[ax], shard0[ax])
-                    ]
-                    for ax in range(len(level0_shape))
-                ]
-                all_bounds = list(itertools.product(*per_ax))
-                n_workers = self._n_workers
-                out_dtype_str = str(self.output_dtype)
-
-                shard_bounds: List[Tuple[_Bounds, _Bounds]] = [
-                    (bounds, bounds) for bounds in all_bounds
-                ]
-
-                # The write phase is GIL-bound, so use processes (not threads)
-                # to parallelize. The parent has already created the store via
-                # writer.initialize(); each worker writes a disjoint shard.
-                if n_workers > 1:
-                    with ProcessPoolExecutor(max_workers=n_workers) as pool:
-                        futures = [
-                            pool.submit(
-                                _write_shard_process,
-                                self.source,
-                                str(out_path),
-                                native_order,
-                                scene_index,
-                                out_dtype_str,
-                                src_bounds,
-                                dest_bounds,
-                            )
-                            for src_bounds, dest_bounds in shard_bounds
-                        ]
-                        for future in futures:
-                            future.result()  # surface any worker exception
-                else:
-                    for src_bounds, dest_bounds in shard_bounds:
-                        _write_shard_process(
-                            self.source,
-                            str(out_path),
-                            native_order,
-                            scene_index,
-                            out_dtype_str,
-                            src_bounds,
-                            dest_bounds,
-                        )
-
+                self._write_auto_layout_shards(
+                    out_path, native_order, scene_index, auto_shards, level0_shape
+                )
             else:
-                # Fallback: T-batched single-threaded writes.
-                if has_t:
-                    assert t_ax is not None
-                    t_total = level0_shape[t_ax]
-                    batch_size = self._tbatch or t_total
-                    for i in range(0, t_total, batch_size):
-                        t_end = min(i + batch_size, t_total)
-                        dest_slices: List[Any] = [
-                            slice(0, level0_shape[ax])
-                            for ax in range(len(level0_shape))
-                        ]
-                        dest_slices[t_ax] = slice(base_t_dest + i, base_t_dest + t_end)
-                        src_slices_fb: List[Any] = list(dest_slices)
-                        src_slices_fb[t_ax] = slice(base_t_src + i, base_t_src + t_end)
-                        writer.write_region(
-                            data_all[tuple(src_slices_fb)].compute(),
-                            tuple(dest_slices),
-                        )
-                else:
-                    writer.write_region(
-                        data_all.compute(),
-                        tuple(slice(0, s) for s in level0_shape),
+                has_t = "t" in axis_names
+                t_ax = dims.index("T") if has_t else None
+                self._write_fallback(writer, data_all, has_t, t_ax, level0_shape)
+
+    def _write_auto_layout_shards(
+        self,
+        out_path: Path,
+        native_order: str,
+        scene_index: int,
+        auto_shards: MultiResolutionShapeSpec,
+        level0_shape: Tuple[int, ...],
+    ) -> None:
+        """Write each disjoint level-0 shard via its own ``write_region`` call.
+
+        Every shard covers exactly one shard boundary at every pyramid level, so
+        no shard is ever read back to be merged. The write phase is GIL-bound, so
+        when ``n_workers > 1`` the shards are dispatched to a
+        ``ProcessPoolExecutor`` (the parent has already created the store via
+        ``writer.initialize()``); otherwise they are written in-process.
+        """
+        shard0 = auto_shards[0]
+        per_ax = [
+            [
+                (s, min(s + shard0[ax], level0_shape[ax]))
+                for s in range(0, level0_shape[ax], shard0[ax])
+            ]
+            for ax in range(len(level0_shape))
+        ]
+        shard_bounds: List[Tuple[_Bounds, _Bounds]] = [
+            (bounds, bounds) for bounds in itertools.product(*per_ax)
+        ]
+        out_dtype_str = str(self.output_dtype)
+        n_workers = self._n_workers
+
+        if n_workers > 1:
+            with ProcessPoolExecutor(max_workers=n_workers) as pool:
+                futures = [
+                    pool.submit(
+                        _write_shard_process,
+                        self.source,
+                        str(out_path),
+                        native_order,
+                        scene_index,
+                        out_dtype_str,
+                        src_bounds,
+                        dest_bounds,
                     )
+                    for src_bounds, dest_bounds in shard_bounds
+                ]
+                for future in futures:
+                    future.result()  # surface any worker exception
+        else:
+            for src_bounds, dest_bounds in shard_bounds:
+                _write_shard_process(
+                    self.source,
+                    str(out_path),
+                    native_order,
+                    scene_index,
+                    out_dtype_str,
+                    src_bounds,
+                    dest_bounds,
+                )
+
+    def _write_fallback(
+        self,
+        writer: OMEZarrWriter,
+        data_all: Any,
+        has_t: bool,
+        t_ax: Optional[int],
+        level0_shape: Tuple[int, ...],
+    ) -> None:
+        """Single-threaded fallback write for non-auto-layout stores.
+
+        Writes the whole image in one region when there is no T axis, otherwise
+        in ``self._tbatch``-sized batches along T.
+        """
+        if not has_t:
+            writer.write_region(
+                data_all.compute(),
+                tuple(slice(0, s) for s in level0_shape),
+            )
+            return
+
+        assert t_ax is not None
+        base_t_src = self._start_t_src or 0
+        base_t_dest = self._start_t_dest or 0
+        t_total = level0_shape[t_ax]
+        batch_size = self._tbatch or t_total
+        for i in range(0, t_total, batch_size):
+            t_end = min(i + batch_size, t_total)
+            dest_slices: List[slice] = [
+                slice(0, level0_shape[ax]) for ax in range(len(level0_shape))
+            ]
+            dest_slices[t_ax] = slice(base_t_dest + i, base_t_dest + t_end)
+            src_slices: List[slice] = list(dest_slices)
+            src_slices[t_ax] = slice(base_t_src + i, base_t_src + t_end)
+            writer.write_region(
+                data_all[tuple(src_slices)].compute(),
+                tuple(dest_slices),
+            )
