@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numcodecs
 import numpy as np
 from bioio import BioImage
-from bioio_base.dimensions import DimensionNames
+from bioio_base.dimensions import DEFAULT_DIMENSION_ORDER, DimensionNames
 from bioio_ome_zarr.writers import Channel, OMEZarrWriter
 from bioio_ome_zarr.writers.ome_zarr_writer import MultiResolutionShapeSpec
 from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_target
@@ -355,20 +355,13 @@ class OmeZarrConverter:
             dims = "".join(ax.upper() for ax in axis_names)
 
             # True when dims are a subset of TCZYX with Y and X present.
-            _ome_axes = {
-                DimensionNames.Time,
-                DimensionNames.Channel,
-                DimensionNames.SpatialZ,
-                DimensionNames.SpatialY,
-                DimensionNames.SpatialX,
-            }
             _ome_dims = (
                 {
                     DimensionNames.SpatialY,
                     DimensionNames.SpatialX,
                 }
                 <= set(dims)
-                <= _ome_axes
+                <= set(DEFAULT_DIMENSION_ORDER)
             )
 
             # (3) Scale to writer
