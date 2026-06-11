@@ -354,20 +354,21 @@ class OmeZarrConverter:
 
             dims = "".join(ax.upper() for ax in axis_names)
 
+            # True when dims are a subset of TCZYX with Y and X present.
+            _ome_axes = {
+                DimensionNames.Time,
+                DimensionNames.Channel,
+                DimensionNames.SpatialZ,
+                DimensionNames.SpatialY,
+                DimensionNames.SpatialX,
+            }
             _ome_dims = (
-                DimensionNames.SpatialY in dims
-                and DimensionNames.SpatialX in dims
-                and all(
-                    d
-                    in (
-                        DimensionNames.Time,
-                        DimensionNames.Channel,
-                        DimensionNames.SpatialZ,
-                        DimensionNames.SpatialY,
-                        DimensionNames.SpatialX,
-                    )
-                    for d in dims
-                )
+                {
+                    DimensionNames.SpatialY,
+                    DimensionNames.SpatialX,
+                }
+                <= set(dims)
+                <= _ome_axes
             )
 
             # (3) Scale to writer

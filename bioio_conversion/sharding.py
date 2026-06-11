@@ -54,48 +54,35 @@ def _choose_zarr_layout(
     chunk_raw = tuple(
         multiscale_chunk_size_from_memory_target([shape], dtype, chunk_limit_bytes)[0]
     )
-    chunk_raw_map = dict(zip(dims, chunk_raw))
-    chunk_y = chunk_raw_map[DimensionNames.SpatialY]
-    chunk_x = chunk_raw_map[DimensionNames.SpatialX]
-    z_chunk = chunk_raw_map.get(DimensionNames.SpatialZ, 1)
-
-    chunk_sizes = {
+    # Force single-T, single-C chunks; keep Z/Y/X from the memory-target helper.
+    chunk_map = {
+        **dict(zip(dims, chunk_raw)),
         DimensionNames.Time: 1,
         DimensionNames.Channel: 1,
-        DimensionNames.SpatialZ: z_chunk,
-        DimensionNames.SpatialY: chunk_y,
-        DimensionNames.SpatialX: chunk_x,
     }
-    chunk_shape = tuple(chunk_sizes[d] for d in dims)
+    chunk_shape = tuple(chunk_map[d] for d in dims)
+    z_chunk = chunk_map.get(DimensionNames.SpatialZ, 1)
+    chunk_y = chunk_map[DimensionNames.SpatialY]
+    chunk_x = chunk_map[DimensionNames.SpatialX]
 
-    # Pack chunks along Z→Y→X→C→T up to the shard budget.
+    # Pack chunks along Z→Y→X→C→T up to the shard budget (C and T are one
+    # chunk wide, so their unit is 1).
     chunk_bytes = int(np.prod(chunk_shape)) * np.dtype(dtype).itemsize
     max_chunks_per_shard = max(1, shard_limit_bytes // chunk_bytes)
 
-    z_chunk_count = (Z + z_chunk - 1) // z_chunk
-    shard_z_chunks = min(z_chunk_count, max_chunks_per_shard)
-    chunks_used = shard_z_chunks
+    used = 1
+    shard_sizes = {}
+    for d, count, unit in (
+        (DimensionNames.SpatialZ, (Z + z_chunk - 1) // z_chunk, z_chunk),
+        (DimensionNames.SpatialY, (Y + chunk_y - 1) // chunk_y, chunk_y),
+        (DimensionNames.SpatialX, (X + chunk_x - 1) // chunk_x, chunk_x),
+        (DimensionNames.Channel, C, 1),
+        (DimensionNames.Time, T, 1),
+    ):
+        take = max(1, min(count, max_chunks_per_shard // used))
+        shard_sizes[d] = take * unit
+        used *= take
 
-    y_chunk_count = (Y + chunk_y - 1) // chunk_y
-    shard_y_chunks = min(y_chunk_count, max_chunks_per_shard // chunks_used)
-    chunks_used *= shard_y_chunks
-
-    x_chunk_count = (X + chunk_x - 1) // chunk_x
-    shard_x_chunks = min(x_chunk_count, max_chunks_per_shard // chunks_used)
-    chunks_used *= shard_x_chunks
-
-    shard_c = max(1, min(C, max_chunks_per_shard // chunks_used))
-    chunks_used *= shard_c
-
-    shard_t = max(1, min(T, max_chunks_per_shard // chunks_used))
-
-    shard_sizes = {
-        DimensionNames.Time: shard_t,
-        DimensionNames.Channel: shard_c,
-        DimensionNames.SpatialZ: shard_z_chunks * z_chunk,
-        DimensionNames.SpatialY: shard_y_chunks * chunk_y,
-        DimensionNames.SpatialX: shard_x_chunks * chunk_x,
-    }
     shard_shape = tuple(shard_sizes[d] for d in dims)
 
     return chunk_shape, shard_shape
@@ -164,9 +151,8 @@ def _choose_pyramid_layout(
     Compute chunk and shard shapes for every level of a multi-resolution pyramid.
 
     Level 0 uses the budget shard algorithm (``_choose_zarr_layout``).  All
-    subsequent levels use ``_proportional_shard`` to derive shards that keep
-    the number of shards per axis constant across the pyramid — the invariant
-    required for safe lock-free region writes via ``write_region(lock=False)``.
+    subsequent levels use ``_proportional_shard`` to keep the number of shards
+    per axis constant across the pyramid (see that function for why).
 
     Parameters
     ----------
@@ -201,7 +187,7 @@ def _choose_pyramid_layout(
         # chunk sizes grow as levels get smaller (the budget fills more of the
         # axis), eventually exceeding the proportional target and forcing
         # _proportional_shard to pick a larger shard — breaking the constant
-        # n_shards invariant required for lock-free region writes.
+        # n_shards invariant.
         prop_target = tuple(
             max(1, round(shard0[ax] * lvl_shape[ax] / shape0[ax]))
             for ax in range(len(lvl_shape))

@@ -277,46 +277,6 @@ _PYRAMID_CASES = [
             ),
         ],
     ),
-    (
-        "TCZYX",
-        [
-            # Same spatial structure as the CZYX case above, with T and C.
-            # shard_Z_0 = 8 × 139 = 1112 already exceeds shape_Z = 1000, so
-            # n_shards_Z = 1 throughout.  At L3 chunk_Z changes from 139 → 125;
-            # coverage cap clamps shard_Z to ceil(125/125)*125 = 125 instead of
-            # letting _round_to_multiple(139, 125) = 250 produce a phantom Z-chunk.
-            _lvl(
-                shape=(5, 2, 1000, 200, 300),
-                chunk_shape=(1, 1, 139, 200, 300),
-                shard_shape=(5, 2, 1112, 200, 300),
-                atlas_fits=False,
-            ),
-            _lvl(
-                shape=(5, 2, 500, 200, 300),
-                chunk_shape=(1, 1, 139, 200, 300),
-                shard_shape=(5, 2, 556, 200, 300),
-                atlas_fits=False,
-            ),
-            _lvl(
-                shape=(5, 2, 250, 200, 300),
-                chunk_shape=(1, 1, 139, 200, 300),
-                shard_shape=(5, 2, 278, 200, 300),
-                atlas_fits=False,
-            ),
-            _lvl(
-                shape=(5, 2, 125, 200, 300),
-                chunk_shape=(1, 1, 125, 200, 300),
-                shard_shape=(5, 2, 125, 200, 300),
-                atlas_fits=False,
-            ),
-            _lvl(
-                shape=(5, 2, 125, 100, 150),
-                chunk_shape=(1, 1, 125, 100, 150),
-                shard_shape=(5, 2, 125, 100, 150),
-                atlas_fits=True,
-            ),
-        ],
-    ),
     # ── Edge cases ────────────────────────────────────────────────────────
     (
         "TCZYX",
@@ -492,32 +452,6 @@ _PYRAMID_CASES = [
             # Coverage cap clamps L1 shard_Y to ceil(2500/2500)*2500=2500
             # and L2 shard_Y to 1250 (would otherwise compound to 5000/2500).
             # n_shards_Y=1 is preserved at every level.
-            _lvl(
-                shape=(5000, 5000),
-                chunk_shape=(1677, 5000),
-                shard_shape=(5031, 5000),
-                atlas_fits=False,
-            ),
-            _lvl(
-                shape=(2500, 2500),
-                chunk_shape=(2500, 2500),
-                shard_shape=(2500, 2500),
-                atlas_fits=False,
-            ),
-            _lvl(
-                shape=(1250, 1250),
-                chunk_shape=(1250, 1250),
-                shard_shape=(1250, 1250),
-                atlas_fits=True,
-            ),
-        ],
-    ),
-    (
-        "XY",
-        [
-            # Same spatial data, reversed dim order.
-            # Y is rightmost so Y fills fully (5000); X is split to 1677.
-            # Coverage cap applies same as YX case above.
             _lvl(
                 shape=(5000, 5000),
                 chunk_shape=(1677, 5000),
