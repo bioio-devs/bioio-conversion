@@ -14,6 +14,7 @@ from bioio_ome_zarr.writers.ome_zarr_writer import MultiResolutionShapeSpec
 from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_target
 from zarr.codecs import BloscCodec
 
+from ..channel_colors import get_channel_colors
 from ..cluster import Cluster
 from ..sharding import (
     DEFAULT_CHUNK_LIMIT_BYTES,
@@ -290,7 +291,9 @@ class OmeZarrConverter:
         Policy:
         - If the user explicitly provided channels, always honor them
         (even if no 'c' axis is present).
-        - Otherwise, only derive channels if a 'c' axis exists.
+        - Otherwise, only derive channels if a 'c' axis exists, auto-assigning
+        display colors via :func:`get_channel_colors` (brightfield → white,
+        fluorescent channels → a perceptually-distinct palette).
         """
 
         # 1. User explicitly supplied channels → always use them
@@ -301,12 +304,21 @@ class OmeZarrConverter:
         if "c" not in axis_names:
             return None
 
-        # 3. Derive minimal channels from BioImage metadata
+        # 3. Derive minimal channels from BioImage metadata, auto-detecting a
+        #    display color per channel. ``self.bioimage`` is already set to the
+        #    active scene by the caller, so get_channel_colors inspects it.
         labels = self.bioimage.channel_names or [
             f"Channel:{i}" for i in range(channel_count)
         ]
+        colors = get_channel_colors(self.bioimage)
 
-        return [Channel(label=lab, color="#FFFFFF") for lab in labels[:channel_count]]
+        return [
+            Channel(
+                label=lab,
+                color=colors[i] if i < len(colors) else "FFFFFF",
+            )
+            for i, lab in enumerate(labels[:channel_count])
+        ]
 
     def _native_axes_and_shape_for_scene(
         self, scene_index: int
