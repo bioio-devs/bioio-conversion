@@ -9,6 +9,7 @@ import numcodecs
 import numpy as np
 from bioio import BioImage
 from bioio_base.dimensions import DEFAULT_DIMENSION_ORDER, DimensionNames
+from bioio_base.reader import Reader
 from bioio_ome_zarr.writers import Channel, OMEZarrWriter
 from bioio_ome_zarr.writers.ome_zarr_writer import MultiResolutionShapeSpec
 from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_target
@@ -609,7 +610,7 @@ class OmeZarrConverter:
     def _write_fallback(
         self,
         writer: OMEZarrWriter,
-        reader: Any,
+        reader: Reader,
         native_order: str,
         t_ax: Optional[int],
         level0_shape: Tuple[int, ...],
