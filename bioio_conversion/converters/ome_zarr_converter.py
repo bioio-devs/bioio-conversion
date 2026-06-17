@@ -59,8 +59,8 @@ def _write_shard_process(
         for i in range(len(native_order))
     }
     # Read the shard via the reader's get_image_data slicing.
-    shard_data = bio.reader.get_image_data(native_order, **region_kwargs).astype(
-        out_dtype, copy=False
+    shard_data = np.asarray(
+        bio.reader.get_image_data(native_order, **region_kwargs), dtype=out_dtype
     )
 
     # Attach to the store the parent already initialized and write this shard.
