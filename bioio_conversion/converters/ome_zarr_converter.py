@@ -533,7 +533,6 @@ class OmeZarrConverter:
             bio.set_scene(scene_index)
             r = bio.reader
             native_order = r.dims.order.upper()
-            data_all = r.get_image_dask_data(native_order)
 
             # (8) Write — shard-aligned region writes via write_region.
             # Every call covers exactly one shard boundary at every pyramid level
@@ -545,9 +544,8 @@ class OmeZarrConverter:
                     out_path, native_order, scene_index, auto_shards, level0_shape
                 )
             else:
-                has_t = "t" in axis_names
-                t_ax = dims.index("T") if has_t else None
-                self._write_fallback(writer, data_all, has_t, t_ax, level0_shape)
+                t_ax = dims.index("T") if "t" in axis_names else None
+                self._write_fallback(writer, r, native_order, t_ax, level0_shape)
 
     def _write_auto_layout_shards(
         self,
@@ -611,37 +609,43 @@ class OmeZarrConverter:
     def _write_fallback(
         self,
         writer: OMEZarrWriter,
-        data_all: Any,
-        has_t: bool,
+        reader: Any,
+        native_order: str,
         t_ax: Optional[int],
         level0_shape: Tuple[int, ...],
     ) -> None:
         """Single-threaded fallback write for non-auto-layout stores.
 
-        Writes the whole image in one region when there is no T axis, otherwise
-        in ``self._tbatch``-sized batches along T.
+        Reads and writes the image in ``self._tbatch``-sized batches along T,
+        defaulting to one timepoint per write so peak memory stays bounded.  The
+        per-batch T slice is delegated to the reader's dimension kwargs (lazily,
+        via ``get_image_dask_data``).  When there is no T axis the image is a
+        single volume, written as one batch.
         """
-        if not has_t:
-            writer.write_region(
-                data_all.compute(),
-                tuple(slice(0, s) for s in level0_shape),
-            )
-            return
-
-        assert t_ax is not None
+        # Source/destination may start at different T offsets (e.g. appending to
+        # an existing store), so track the read and write T origins separately.
         base_t_src = self._start_t_src or 0
         base_t_dest = self._start_t_dest or 0
-        t_total = level0_shape[t_ax]
-        batch_size = self._tbatch or t_total
+
+        # No T axis → treat the whole volume as a single batch (one iteration).
+        t_total = level0_shape[t_ax] if t_ax is not None else 1
+        batch_size = self._tbatch or 1
+
         for i in range(0, t_total, batch_size):
             t_end = min(i + batch_size, t_total)
-            dest_slices: List[slice] = [
-                slice(0, level0_shape[ax]) for ax in range(len(level0_shape))
-            ]
-            dest_slices[t_ax] = slice(base_t_dest + i, base_t_dest + t_end)
-            src_slices: List[slice] = list(dest_slices)
-            src_slices[t_ax] = slice(base_t_src + i, base_t_src + t_end)
-            writer.write_region(
-                data_all[tuple(src_slices)].compute(),
-                tuple(dest_slices),
-            )
+
+            # Default to the full extent on every axis; only T is sub-sliced.
+            dest_slices: List[slice] = [slice(0, s) for s in level0_shape]
+            read_kwargs: Dict[str, slice] = {}
+            if t_ax is not None:
+                # Read this T window from the source; write it at the (possibly
+                # offset) destination T window. Other axes stay full-extent.
+                read_kwargs[DimensionNames.Time] = slice(
+                    base_t_src + i, base_t_src + t_end
+                )
+                dest_slices[t_ax] = slice(base_t_dest + i, base_t_dest + t_end)
+
+            # get_image_dask_data slices lazily, so .compute() only materializes
+            # this batch — not the whole image.
+            batch = reader.get_image_dask_data(native_order, **read_kwargs)
+            writer.write_region(batch.compute(), tuple(dest_slices))
