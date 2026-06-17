@@ -125,19 +125,19 @@ def _proportional_shard(
     shard_shape
         In the same axis order and length as ``shape``.
     """
-    return tuple(
-        min(
-            _round_to_multiple(
-                max(
-                    chunk_shape[ax],
-                    round(reference_shard[ax] * shape[ax] / reference_shape[ax]),
-                ),
-                chunk_shape[ax],
-            ),
-            _round_to_multiple(shape[ax], chunk_shape[ax]),
-        )
-        for ax in range(len(shape))
-    )
+    shard_shape = []
+    for ax in range(len(shape)):
+        # Scale the level-0 shard proportionally to this level's extent, but
+        # never below a single chunk, then round up to a whole chunk multiple.
+        proportional = round(reference_shard[ax] * shape[ax] / reference_shape[ax])
+        scaled = _round_to_multiple(max(chunk_shape[ax], proportional), chunk_shape[ax])
+
+        # Cap at the smallest chunk multiple that covers the actual extent so we
+        # don't carry phantom overflow chunks that could never be filled.
+        coverage_cap = _round_to_multiple(shape[ax], chunk_shape[ax])
+
+        shard_shape.append(min(scaled, coverage_cap))
+    return tuple(shard_shape)
 
 
 def choose_pyramid_layout(
