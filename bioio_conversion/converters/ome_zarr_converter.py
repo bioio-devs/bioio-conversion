@@ -1,5 +1,7 @@
+import itertools
 import re
 import warnings
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -7,13 +9,64 @@ import numcodecs
 import numpy as np
 from bioio import BioImage
 from bioio_base.dimensions import DEFAULT_DIMENSION_ORDER, DimensionNames
+from bioio_base.reader import Reader
 from bioio_ome_zarr.writers import Channel, OMEZarrWriter
 from bioio_ome_zarr.writers.ome_zarr_writer import MultiResolutionShapeSpec
 from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_target
 from zarr.codecs import BloscCodec
 
 from ..cluster import Cluster
-from ..sharding import build_pyramid_shapes, choose_pyramid_layout
+from ..sharding import (
+    DEFAULT_CHUNK_LIMIT_BYTES,
+    DEFAULT_SHARD_LIMIT_BYTES,
+    build_pyramid_shapes,
+    choose_pyramid_layout,
+)
+
+# Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.
+_Bounds = Tuple[Tuple[int, int], ...]
+
+
+def _write_shard_process(
+    source: str,
+    store_path: str,
+    native_order: str,
+    scene_index: int,
+    out_dtype_str: str,
+    src_bounds: _Bounds,
+    dest_bounds: _Bounds,
+) -> None:
+    """
+    Read one shard from the source and write it to an already-initialized
+    OME-Zarr store. Module-level and primitive-only (so its arguments pickle
+    cleanly) to run in a separate process.
+
+    The write phase (downsample + Blosc compression + zarr shard assembly) is
+    largely GIL-bound, so process-based parallelism — not threads — is what
+    actually scales it. Workers attach to the existing store and only call
+    ``write_region``; the store is created once by the parent before dispatch,
+    and every worker writes a disjoint shard, so there is no coordination or
+    read-modify-write between processes.
+    """
+    src_region = tuple(slice(lo, hi) for lo, hi in src_bounds)
+    dest_region = tuple(slice(lo, hi) for lo, hi in dest_bounds)
+    out_dtype = np.dtype(out_dtype_str)
+
+    # New image instance to access data per process
+    bio = BioImage(source)
+    bio.set_scene(scene_index)
+    region_kwargs = {
+        native_order[i]: slice(src_region[i].start, src_region[i].stop)
+        for i in range(len(native_order))
+    }
+    # Read the shard via the reader's get_image_data slicing.
+    shard_data = np.asarray(
+        bio.reader.get_image_data(native_order, **region_kwargs), dtype=out_dtype
+    )
+
+    # Attach to the store the parent already initialized and write this shard.
+    writer = OMEZarrWriter.open(store_path)
+    writer.write_region(shard_data, dest_region)
 
 
 class OmeZarrConverter:
@@ -52,6 +105,8 @@ class OmeZarrConverter:
         tbatch: Optional[int] = None,
         dtype: Optional[Union[str, np.dtype]] = None,
         auto_dask_cluster: bool = False,
+        n_workers: int = 1,
+        shard_limit_bytes: int = DEFAULT_SHARD_LIMIT_BYTES,
     ) -> None:
         """
         Initialize an OME-Zarr converter with flexible scene selection,
@@ -145,7 +200,11 @@ class OmeZarrConverter:
         auto_dask_cluster : bool
             If True, automatically spin up a local Dask cluster with
             8 workers (using `Cluster(n_workers=8).start()`) before any
-            conv
+            conversion.
+        n_workers : int
+            Number of worker *processes* for shard writes (auto-layout path).
+        shard_limit_bytes : int
+            Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
         """
         self.source = source
         self.destination = destination or str(Path.cwd())
@@ -199,6 +258,8 @@ class OmeZarrConverter:
         self._start_t_src = start_t_src
         self._start_t_dest = start_t_dest
         self._tbatch = None if tbatch is None else tbatch
+        self._n_workers = n_workers
+        self._shard_limit_bytes = shard_limit_bytes
 
     # -------------------------------------------------------------------------
     # Internal helpers
@@ -400,7 +461,9 @@ class OmeZarrConverter:
                     MultiResolutionShapeSpec
                 ] = self._writer_chunk_shape
             elif can_auto_layout:
-                chunk_limit = self._helper_memory_target_bytes or 16 * 1024**2
+                chunk_limit = (
+                    self._helper_memory_target_bytes or DEFAULT_CHUNK_LIMIT_BYTES
+                )
                 level_shapes_list = self._ensure_per_level_shapes(
                     writer_level_shapes_param
                 )
@@ -409,6 +472,7 @@ class OmeZarrConverter:
                     dtype=self.output_dtype,
                     dims=dims,
                     chunk_limit_bytes=chunk_limit,
+                    shard_limit_bytes=self._shard_limit_bytes,
                 )
                 writer_chunk_shape_param = auto_chunks
                 writer_shard_shape_param = auto_shards
@@ -470,28 +534,119 @@ class OmeZarrConverter:
             bio.set_scene(scene_index)
             r = bio.reader
             native_order = r.dims.order.upper()
-            data_all = r.get_image_dask_data(native_order)
 
-            # (8) Write
-            has_t = "t" in axis_names
-            t_total = int(getattr(r.dims, "T", 1)) if has_t else 1
+            # (8) Write — shard-aligned region writes via write_region.
+            # Every call covers exactly one shard boundary at every pyramid level
+            # so no shard is ever read back to be merged (no read-modify-write).
+            writer.initialize()
 
-            if has_t and t_total > 1:
-                base_t_src = self._start_t_src or 0
-                base_t_dest = self._start_t_dest or 0
-                batch_size = self._tbatch or t_total
-                # find which axis index is T once (e.g. axis 0 in "TCYX")
-                t_axis = list(native_order).index("T")
-                for i in range(0, t_total, batch_size):
-                    batch = min(batch_size, t_total - i)
-                    # pre-slice to this batch window so the writer only holds
-                    # the dask graph for these frames, not the full array
-                    slices = [slice(None)] * data_all.ndim
-                    slices[t_axis] = slice(base_t_src + i, base_t_src + i + batch)
-                    writer.write_timepoints(
-                        data=data_all[tuple(slices)],
-                        start_T_dest=base_t_dest + i,  # advance destination each batch
-                        total_T=batch,
-                    )
+            if can_auto_layout:
+                self._write_auto_layout_shards(
+                    out_path, native_order, scene_index, auto_shards, level0_shape
+                )
             else:
-                writer.write_full_volume(data_all)
+                t_ax = dims.index("T") if "t" in axis_names else None
+                self._write_fallback(writer, r, native_order, t_ax, level0_shape)
+
+    def _write_auto_layout_shards(
+        self,
+        out_path: Path,
+        native_order: str,
+        scene_index: int,
+        auto_shards: MultiResolutionShapeSpec,
+        level0_shape: Tuple[int, ...],
+    ) -> None:
+        """Write each disjoint level-0 shard via its own ``write_region`` call.
+
+        Every shard covers exactly one shard boundary at every pyramid level, so
+        no shard is ever read back to be merged. The write phase is GIL-bound, so
+        when ``n_workers > 1`` the shards are dispatched to a
+        ``ProcessPoolExecutor`` (the parent has already created the store via
+        ``writer.initialize()``); otherwise they are written in-process.
+        """
+        shard0 = auto_shards[0]
+        per_ax = [
+            [
+                (s, min(s + shard0[ax], level0_shape[ax]))
+                for s in range(0, level0_shape[ax], shard0[ax])
+            ]
+            for ax in range(len(level0_shape))
+        ]
+        shard_bounds: List[Tuple[_Bounds, _Bounds]] = [
+            (bounds, bounds) for bounds in itertools.product(*per_ax)
+        ]
+        out_dtype_str = str(self.output_dtype)
+        n_workers = self._n_workers
+
+        if n_workers > 1:
+            with ProcessPoolExecutor(max_workers=n_workers) as pool:
+                futures = [
+                    pool.submit(
+                        _write_shard_process,
+                        self.source,
+                        str(out_path),
+                        native_order,
+                        scene_index,
+                        out_dtype_str,
+                        src_bounds,
+                        dest_bounds,
+                    )
+                    for src_bounds, dest_bounds in shard_bounds
+                ]
+                for future in futures:
+                    future.result()  # surface any worker exception
+        else:
+            for src_bounds, dest_bounds in shard_bounds:
+                _write_shard_process(
+                    self.source,
+                    str(out_path),
+                    native_order,
+                    scene_index,
+                    out_dtype_str,
+                    src_bounds,
+                    dest_bounds,
+                )
+
+    def _write_fallback(
+        self,
+        writer: OMEZarrWriter,
+        reader: Reader,
+        native_order: str,
+        t_ax: Optional[int],
+        level0_shape: Tuple[int, ...],
+    ) -> None:
+        """Single-threaded fallback write for non-auto-layout stores.
+
+        Reads and writes the image in ``self._tbatch``-sized batches along T,
+        defaulting to one timepoint per write so peak memory stays bounded.  The
+        per-batch T slice is delegated to the reader's dimension kwargs (lazily,
+        via ``get_image_dask_data``).  When there is no T axis the image is a
+        single volume, written as one batch.
+        """
+        # Source/destination may start at different T offsets (e.g. appending to
+        # an existing store), so track the read and write T origins separately.
+        base_t_src = self._start_t_src or 0
+        base_t_dest = self._start_t_dest or 0
+
+        # No T axis → treat the whole volume as a single batch (one iteration).
+        t_total = level0_shape[t_ax] if t_ax is not None else 1
+        batch_size = self._tbatch or 1
+
+        for i in range(0, t_total, batch_size):
+            t_end = min(i + batch_size, t_total)
+
+            # Default to the full extent on every axis; only T is sub-sliced.
+            dest_slices: List[slice] = [slice(0, s) for s in level0_shape]
+            read_kwargs: Dict[str, slice] = {}
+            if t_ax is not None:
+                # Read this T window from the source; write it at the (possibly
+                # offset) destination T window. Other axes stay full-extent.
+                read_kwargs[DimensionNames.Time] = slice(
+                    base_t_src + i, base_t_src + t_end
+                )
+                dest_slices[t_ax] = slice(base_t_dest + i, base_t_dest + t_end)
+
+            # get_image_dask_data slices lazily, so .compute() only materializes
+            # this batch — not the whole image.
+            batch = reader.get_image_dask_data(native_order, **read_kwargs)
+            writer.write_region(batch.compute(), tuple(dest_slices))

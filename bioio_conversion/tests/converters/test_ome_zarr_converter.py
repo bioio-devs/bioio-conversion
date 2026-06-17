@@ -11,6 +11,11 @@ from bioio_conversion.converters.ome_zarr_converter import OmeZarrConverter
 
 from ..conftest import LOCAL_RESOURCES_DIR
 
+# Small shard limit used across multi-shard tests.
+# Forcing one-chunk-per-shard exercises the concurrent write path with multiple
+# shards even on tiny images where a 4 GiB shard would hold the entire array.
+_TEST_SHARD_LIMIT = 256 * 1024  # 256 KiB — used for integration tests
+
 
 @pytest.mark.parametrize(
     "filename, scenes_input, expected_scenes",
@@ -253,3 +258,86 @@ def test_zarr_explicit_level_shapes(
         tuple(reader.resolution_level_dims[i]) for i in range(len(explicit_shapes))
     ]
     assert actual_shapes == explicit_shapes
+
+
+# ---------------------------------------------------------------------------
+# Conversion correctness
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["s_3_t_1_c_3_z_5.czi", "s_3_t_1_c_3_z_5.ome.tiff"],
+    ids=["czi", "tiff"],
+)
+@pytest.mark.parametrize("n_workers", [1, 2], ids=["1proc", "2proc"])
+def test_conversion_pixel_correctness(
+    tmp_path: pathlib.Path,
+    filename: str,
+    n_workers: int,
+) -> None:
+    """
+    A full conversion produces a multi-shard v3 store whose level-0 pixels
+    exactly match the source. A small shard limit forces multiple shards, and
+    parametrizing n_workers exercises both the serial and the
+    ProcessPoolExecutor dispatch branches for both CZI and TIFF.
+    """
+    src_path = LOCAL_RESOURCES_DIR / filename
+
+    OmeZarrConverter(
+        source=str(src_path),
+        destination=str(tmp_path),
+        name="region_correct",
+        scenes=0,
+        zarr_format=3,
+        shard_limit_bytes=_TEST_SHARD_LIMIT,
+        n_workers=n_workers,
+    ).convert()
+
+    store_path = tmp_path / "region_correct.ome.zarr"
+    assert store_path.exists()
+
+    bio_in = BioImage(str(src_path)).reader
+    bio_in.set_scene(0)
+    bio_out = BioImage(str(store_path)).reader
+    bio_out.set_scene(0)
+
+    assert bio_in.shape == bio_out.shape
+    assert_array_equal(bio_out.get_image_data(), bio_in.get_image_data())
+
+
+def test_multiprocess_matches_singleprocess(tmp_path: pathlib.Path) -> None:
+    """
+    Concurrent lock-free shard writes (n_workers=2) must produce a byte-identical
+    store to the serial path (n_workers=1) at *every* pyramid level. num_levels
+    forces a real downsampled pyramid; if disjoint-shard writes raced or
+    collided, the downsampled levels would diverge.
+    """
+    import zarr
+
+    src_path = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.czi"
+
+    def _convert(name: str, n_workers: int) -> str:
+        OmeZarrConverter(
+            source=str(src_path),
+            destination=str(tmp_path),
+            name=name,
+            scenes=0,
+            zarr_format=3,
+            num_levels=3,
+            shard_limit_bytes=_TEST_SHARD_LIMIT,
+            n_workers=n_workers,
+        ).convert()
+        return str(tmp_path / f"{name}.ome.zarr")
+
+    serial = zarr.open_group(_convert("serial", 1), mode="r")
+    parallel = zarr.open_group(_convert("parallel", 2), mode="r")
+
+    n_levels = len(serial)
+    assert n_levels == len(parallel) > 1, "expected a multi-level pyramid"
+    for lvl in range(n_levels):
+        assert_array_equal(
+            serial[str(lvl)][...],
+            parallel[str(lvl)][...],
+            err_msg=f"Level {lvl}: parallel differs from serial",
+        )
