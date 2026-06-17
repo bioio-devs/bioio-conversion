@@ -13,7 +13,7 @@ from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_targe
 from zarr.codecs import BloscCodec
 
 from ..cluster import Cluster
-from ..sharding import _build_pyramid_shapes, _choose_pyramid_layout
+from ..sharding import build_pyramid_shapes, choose_pyramid_layout
 
 
 class OmeZarrConverter:
@@ -78,9 +78,12 @@ class OmeZarrConverter:
             If provided, convenience options like ``num_levels`` and ``downsample_z``
             are ignored.
         chunk_shape : Optional[Union[Tuple[int, ...], Tuple[Tuple[int, ...], ...]]]
-            Explicit chunk shape — a single tuple applied to all levels or
-            per-level tuples.  When provided, disables the v3 auto-chunk/shard
-            calculation.
+            Explicit chunk shape for the written arrays (applies to both Zarr v2
+            and v3) — a single tuple applied to all levels, or per-level tuples,
+            in the array's axis order (e.g. ``(1, 1, 1, 512, 512)`` for TCZYX).
+            The writer validates it against each level's shape. When provided
+            under v3 it also disables the auto-shard calculation, since the
+            shard layout is derived from the chunk shape.
         shard_shape : Optional[Union[Tuple[int, ...], Tuple[Tuple[int, ...], ...]]]
             Explicit shard shape (Zarr v3 only).  When provided, disables the
             v3 auto-shard calculation.
@@ -127,7 +130,7 @@ class OmeZarrConverter:
             Chunk budget in bytes.  For ``zarr_format=3`` this is passed as
             ``chunk_limit_bytes`` to the auto-chunk/shard layout; for other
             formats it drives ``multiscale_chunk_size_from_memory_target``.
-            Has no effect when ``chunk_shape`` is set explicitly.
+            Has no effect when ``chunk_shape`` is set explicitly. Default: 16 MiB.
         start_t_src : Optional[int]
             Source T index at which to begin reading from the BioImage. Default: use
             writer default.
@@ -355,7 +358,7 @@ class OmeZarrConverter:
             dims = "".join(ax.upper() for ax in axis_names)
 
             # True when dims are a subset of TCZYX with Y and X present.
-            _ome_dims = (
+            ome_dims = (
                 {
                     DimensionNames.SpatialY,
                     DimensionNames.SpatialX,
@@ -372,10 +375,10 @@ class OmeZarrConverter:
             elif (
                 self._writer_zarr_format == 3
                 and self._helper_num_levels is None
-                and _ome_dims
+                and ome_dims
             ):
                 # v3 default: auto-generate pyramid levels down to atlas fit.
-                writer_level_shapes_param = _build_pyramid_shapes(level0_shape, dims)
+                writer_level_shapes_param = build_pyramid_shapes(level0_shape, dims)
             else:
                 derived = self._build_level_shapes_simple(axis_names, level0_shape)
                 writer_level_shapes_param = (
@@ -385,23 +388,23 @@ class OmeZarrConverter:
             # (4) Chunking + sharding
             writer_shard_shape_param = self._writer_shard_shape
 
-            _can_auto_layout = (
+            can_auto_layout = (
                 self._writer_zarr_format == 3
                 and self._writer_chunk_shape is None
                 and self._writer_shard_shape is None
-                and _ome_dims
+                and ome_dims
             )
 
             if self._writer_chunk_shape is not None:
                 writer_chunk_shape_param: Optional[
                     MultiResolutionShapeSpec
                 ] = self._writer_chunk_shape
-            elif _can_auto_layout:
+            elif can_auto_layout:
                 chunk_limit = self._helper_memory_target_bytes or 16 * 1024**2
                 level_shapes_list = self._ensure_per_level_shapes(
                     writer_level_shapes_param
                 )
-                auto_chunks, auto_shards = _choose_pyramid_layout(
+                auto_chunks, auto_shards = choose_pyramid_layout(
                     level_shapes=level_shapes_list,
                     dtype=self.output_dtype,
                     dims=dims,

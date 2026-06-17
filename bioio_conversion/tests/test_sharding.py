@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 
 from bioio_conversion.sharding import (
-    _ATLAS_SIZE,
-    _build_pyramid_shapes,
-    _choose_pyramid_layout,
+    ATLAS_SIZE,
+    build_pyramid_shapes,
+    choose_pyramid_layout,
 )
 
 _16MiB = 16 * 1024**2
@@ -23,8 +23,8 @@ def _atlas_fits(shape: tuple, dims: str) -> bool:
     dim_map = dict(zip(dims, shape))
     Y, X = dim_map["Y"], dim_map["X"]
     Z = dim_map.get("Z", 1)
-    tiles_x = _ATLAS_SIZE // X if X <= _ATLAS_SIZE else 0
-    tiles_y = _ATLAS_SIZE // Y if Y <= _ATLAS_SIZE else 0
+    tiles_x = ATLAS_SIZE // X if X <= ATLAS_SIZE else 0
+    tiles_y = ATLAS_SIZE // Y if Y <= ATLAS_SIZE else 0
     return tiles_x * tiles_y >= Z
 
 
@@ -241,7 +241,7 @@ _PYRAMID_CASES = [
         "CZYX",
         [
             # Z >> min(X,Y): pyramid halves Z first (3×), then switches to XY.
-            # Demonstrates the min(X,Y)≥Z branch in _build_pyramid_shapes.
+            # Demonstrates the min(X,Y)≥Z branch in build_pyramid_shapes.
             # At L3 chunk_Z changes from 139 → 125 (full Z fits in chunk budget).
             # Proportional would give _round_to_multiple(139, 125)=250, but the
             # coverage cap clamps to ceil(125/125)*125=125, keeping shard_Z=125.
@@ -396,7 +396,7 @@ _PYRAMID_CASES = [
             # Large image where per-level independent chunks would grow past the
             # proportional shard target at levels 2–6 (chunk_Y expands to fill the
             # 16 MiB budget as Y shrinks, exceeding the proportional target).
-            # _choose_pyramid_layout caps chunk per axis to the proportional target
+            # choose_pyramid_layout caps chunk per axis to the proportional target
             # so n_shards stays (10, 3, 1, 8, 1) throughout.
             _lvl(
                 shape=(10, 3, 64, 16384, 16384),
@@ -476,7 +476,7 @@ _PYRAMID_CASES = [
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# _build_pyramid_shapes + _choose_zarr_layout: full pyramid (all levels)
+# build_pyramid_shapes + _choose_zarr_layout: full pyramid (all levels)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -488,21 +488,21 @@ _PYRAMID_CASES = [
 def test_pyramid_layout(dims: str, levels: list) -> None:
     """
     For each case:
-      - _build_pyramid_shapes produces exactly the expected level shapes
+      - build_pyramid_shapes produces exactly the expected level shapes
       - Level 0: _choose_zarr_layout (budget path) matches expected chunk + shard
-      - Levels > 0: _choose_pyramid_layout (proportional) matches expected chunk + shard
+      - Levels > 0: choose_pyramid_layout (proportional) matches expected chunk + shard
       - chunk bytes are within the 16 MiB ceiling
       - shard bytes are within the 4 GiB ceiling
       - the terminal level fits within the atlas canvas
     """
     base_shape = levels[0][0]
-    level_shapes = _build_pyramid_shapes(base_shape, dims)
+    level_shapes = build_pyramid_shapes(base_shape, dims)
 
     assert len(level_shapes) == len(
         levels
     ), f"expected {len(levels)} levels, got {len(level_shapes)}: {level_shapes}"
 
-    all_chunks, all_shards = _choose_pyramid_layout(level_shapes, _DTYPE, dims)
+    all_chunks, all_shards = choose_pyramid_layout(level_shapes, _DTYPE, dims)
 
     for i, (lvl_shape, (exp_shape, exp_chunk, exp_shard, exp_fits)) in enumerate(
         zip(level_shapes, levels)

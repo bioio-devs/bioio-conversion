@@ -4,7 +4,7 @@ import numpy as np
 from bioio_base.dimensions import DimensionNames
 from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_target
 
-_ATLAS_SIZE = 2048
+ATLAS_SIZE = 2048
 
 
 def _round_to_multiple(value: int, multiple: int) -> int:
@@ -140,7 +140,7 @@ def _proportional_shard(
     )
 
 
-def _choose_pyramid_layout(
+def choose_pyramid_layout(
     level_shapes: List[Tuple[int, ...]],
     dtype: Union[str, "np.dtype[Any]"],
     dims: str,
@@ -201,10 +201,10 @@ def _choose_pyramid_layout(
     return all_chunks, all_shards
 
 
-def _build_pyramid_shapes(
+def build_pyramid_shapes(
     base_shape: Tuple[int, ...],
     dims: str,
-    atlas_size: int = _ATLAS_SIZE,
+    atlas_size: int = ATLAS_SIZE,
 ) -> List[Tuple[int, ...]]:
     """
     Generate multi-resolution pyramid level shapes with atlas-fit termination.
@@ -223,7 +223,7 @@ def _build_pyramid_shapes(
         Dimension labels for ``base_shape`` in reader-native order.
     atlas_size
         Edge length (in pixels) of the square viewer atlas canvas.
-        Default: ``_ATLAS_SIZE`` (2048).
+        Default: ``ATLAS_SIZE`` (2048).
 
     Returns
     -------
