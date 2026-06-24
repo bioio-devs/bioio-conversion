@@ -306,6 +306,71 @@ Registers clean shutdown on exit or SIGINT/SIGTERM.</p>
 </dd></dl>
 
 </section>
+<section id="module-bioio_conversion.sharding">
+<span id="bioio-conversion-sharding-module"></span><h2>bioio_conversion.sharding module<a class="headerlink" href="#module-bioio_conversion.sharding" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="bioio_conversion.sharding.build_pyramid_shapes">
+<span class="sig-prename descclassname"><span class="pre">bioio_conversion.sharding.</span></span><span class="sig-name descname"><span class="pre">build_pyramid_shapes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">base_shape</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dims</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atlas_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">2048</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/bioio_conversion/sharding.html#build_pyramid_shapes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bioio_conversion.sharding.build_pyramid_shapes" title="Link to this definition">¶</a></dt>
+<dd><p>Generate multi-resolution pyramid level shapes with atlas-fit termination.</p>
+<p>Downsamples only Z, Y, and X — T and C are never changed.  Halves X and Y
+together while <code class="docutils literal notranslate"><span class="pre">min(X,</span> <span class="pre">Y)</span> <span class="pre">&gt;=</span> <span class="pre">Z</span></code>; once that condition no longer holds,
+halves Z instead.  Stops as soon as all Z slices of the current level can
+be tiled into an <code class="docutils literal notranslate"><span class="pre">atlas_size</span> <span class="pre">×</span> <span class="pre">atlas_size</span></code> canvas:
+<code class="docutils literal notranslate"><span class="pre">(atlas_size</span> <span class="pre">//</span> <span class="pre">X)</span> <span class="pre">*</span> <span class="pre">(atlas_size</span> <span class="pre">//</span> <span class="pre">Y)</span> <span class="pre">&gt;=</span> <span class="pre">Z</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><dl class="simple">
+<dt><strong>base_shape</strong></dt><dd><p>Level-0 image shape matching <code class="docutils literal notranslate"><span class="pre">dims</span></code>.</p>
+</dd>
+<dt><strong>dims</strong></dt><dd><p>Dimension labels for <code class="docutils literal notranslate"><span class="pre">base_shape</span></code> in reader-native order.</p>
+</dd>
+<dt><strong>atlas_size</strong></dt><dd><p>Edge length (in pixels) of the square viewer atlas canvas.
+Default: <code class="docutils literal notranslate"><span class="pre">ATLAS_SIZE</span></code> (2048).</p>
+</dd>
+</dl>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><dl class="simple">
+<dt>List[Tuple[int, …]]</dt><dd><p>Per-level shapes, level 0 first, each in the same axis order as
+<code class="docutils literal notranslate"><span class="pre">dims</span></code>.  The list always contains at least one entry.</p>
+</dd>
+</dl>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="bioio_conversion.sharding.choose_pyramid_layout">
+<span class="sig-prename descclassname"><span class="pre">bioio_conversion.sharding.</span></span><span class="sig-name descname"><span class="pre">choose_pyramid_layout</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">level_shapes</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dims</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chunk_limit_bytes</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">16777216</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shard_limit_bytes</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">4294967296</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/bioio_conversion/sharding.html#choose_pyramid_layout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bioio_conversion.sharding.choose_pyramid_layout" title="Link to this definition">¶</a></dt>
+<dd><p>Compute chunk and shard shapes for every level of a multi-resolution pyramid.</p>
+<p>Level 0 uses the budget shard algorithm (<code class="docutils literal notranslate"><span class="pre">_choose_zarr_layout</span></code>).  All
+subsequent levels use <code class="docutils literal notranslate"><span class="pre">_proportional_shard</span></code> to keep the number of shards
+per axis constant across the pyramid (see that function for why).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><dl class="simple">
+<dt><strong>level_shapes</strong></dt><dd><p>Per-level shapes, level 0 first.</p>
+</dd>
+<dt><strong>dtype</strong></dt><dd><p>Array dtype (any form accepted by <code class="docutils literal notranslate"><span class="pre">np.dtype</span></code>).</p>
+</dd>
+<dt><strong>dims</strong></dt><dd><p>Dimension labels matching the axis order of the shapes.</p>
+</dd>
+<dt><strong>chunk_limit_bytes</strong></dt><dd><p>Maximum uncompressed chunk size. Default: 16 MiB.</p>
+</dd>
+<dt><strong>shard_limit_bytes</strong></dt><dd><p>Maximum uncompressed shard size for level 0. Default: 4 GiB.</p>
+</dd>
+</dl>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><dl class="simple">
+<dt>all_chunks, all_shards</dt><dd><p>Per-level chunk and shard shapes, level 0 first.</p>
+</dd>
+</dl>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
 <section id="module-bioio_conversion">
 <span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-bioio_conversion" title="Link to this heading">¶</a></h2>
 <p>Top-level package initialization. Exposes main utilities for easy import.</p>
@@ -372,6 +437,11 @@ Registers clean shutdown on exit or SIGINT/SIGTERM.</p>
 <li><a class="reference internal" href="#bioio_conversion.cluster.Cluster.start"><code class="docutils literal notranslate"><span class="pre">Cluster.start()</span></code></a></li>
 </ul>
 </li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-bioio_conversion.sharding">bioio_conversion.sharding module</a><ul>
+<li><a class="reference internal" href="#bioio_conversion.sharding.build_pyramid_shapes"><code class="docutils literal notranslate"><span class="pre">build_pyramid_shapes()</span></code></a></li>
+<li><a class="reference internal" href="#bioio_conversion.sharding.choose_pyramid_layout"><code class="docutils literal notranslate"><span class="pre">choose_pyramid_layout()</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#module-bioio_conversion">Module contents</a><ul>

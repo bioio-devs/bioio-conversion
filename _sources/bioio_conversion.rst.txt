@@ -20,6 +20,14 @@ bioio\_conversion.cluster module
    :show-inheritance:
    :undoc-members:
 
+bioio\_conversion.sharding module
+---------------------------------
+
+.. automodule:: bioio_conversion.sharding
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 Module contents
 ---------------
 

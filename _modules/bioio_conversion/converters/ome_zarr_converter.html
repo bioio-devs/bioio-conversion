@@ -235,20 +235,75 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for bioio_conversion.converters.ome_zarr_converter</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProcessPoolExecutor</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numcodecs</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">bioio</span><span class="w"> </span><span class="kn">import</span> <span class="n">BioImage</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bioio_base.dimensions</span><span class="w"> </span><span class="kn">import</span> <span class="n">DEFAULT_DIMENSION_ORDER</span><span class="p">,</span> <span class="n">DimensionNames</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bioio_base.reader</span><span class="w"> </span><span class="kn">import</span> <span class="n">Reader</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">bioio_ome_zarr.writers</span><span class="w"> </span><span class="kn">import</span> <span class="n">Channel</span><span class="p">,</span> <span class="n">OMEZarrWriter</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">bioio_ome_zarr.writers.ome_zarr_writer</span><span class="w"> </span><span class="kn">import</span> <span class="n">MultiResolutionShapeSpec</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">bioio_ome_zarr.writers.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">multiscale_chunk_size_from_memory_target</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">zarr.codecs</span><span class="w"> </span><span class="kn">import</span> <span class="n">BloscCodec</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">..cluster</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cluster</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..sharding</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DEFAULT_CHUNK_LIMIT_BYTES</span><span class="p">,</span>
+    <span class="n">DEFAULT_SHARD_LIMIT_BYTES</span><span class="p">,</span>
+    <span class="n">build_pyramid_shapes</span><span class="p">,</span>
+    <span class="n">choose_pyramid_layout</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.</span>
+<span class="n">_Bounds</span> <span class="o">=</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_write_shard_process</span><span class="p">(</span>
+    <span class="n">source</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">store_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">native_order</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">scene_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">out_dtype_str</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">src_bounds</span><span class="p">:</span> <span class="n">_Bounds</span><span class="p">,</span>
+    <span class="n">dest_bounds</span><span class="p">:</span> <span class="n">_Bounds</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Read one shard from the source and write it to an already-initialized</span>
+<span class="sd">    OME-Zarr store. Module-level and primitive-only (so its arguments pickle</span>
+<span class="sd">    cleanly) to run in a separate process.</span>
+
+<span class="sd">    The write phase (downsample + Blosc compression + zarr shard assembly) is</span>
+<span class="sd">    largely GIL-bound, so process-based parallelism — not threads — is what</span>
+<span class="sd">    actually scales it. Workers attach to the existing store and only call</span>
+<span class="sd">    ``write_region``; the store is created once by the parent before dispatch,</span>
+<span class="sd">    and every worker writes a disjoint shard, so there is no coordination or</span>
+<span class="sd">    read-modify-write between processes.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">src_region</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span> <span class="k">for</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="ow">in</span> <span class="n">src_bounds</span><span class="p">)</span>
+    <span class="n">dest_region</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span> <span class="k">for</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="ow">in</span> <span class="n">dest_bounds</span><span class="p">)</span>
+    <span class="n">out_dtype</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">(</span><span class="n">out_dtype_str</span><span class="p">)</span>
+
+    <span class="c1"># New image instance to access data per process</span>
+    <span class="n">bio</span> <span class="o">=</span> <span class="n">BioImage</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+    <span class="n">bio</span><span class="o">.</span><span class="n">set_scene</span><span class="p">(</span><span class="n">scene_index</span><span class="p">)</span>
+    <span class="n">region_kwargs</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">native_order</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span> <span class="nb">slice</span><span class="p">(</span><span class="n">src_region</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">src_region</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">native_order</span><span class="p">))</span>
+    <span class="p">}</span>
+    <span class="c1"># Read the shard via the reader&#39;s get_image_data slicing.</span>
+    <span class="n">shard_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+        <span class="n">bio</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_image_data</span><span class="p">(</span><span class="n">native_order</span><span class="p">,</span> <span class="o">**</span><span class="n">region_kwargs</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">out_dtype</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Attach to the store the parent already initialized and write this shard.</span>
+    <span class="n">writer</span> <span class="o">=</span> <span class="n">OMEZarrWriter</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">store_path</span><span class="p">)</span>
+    <span class="n">writer</span><span class="o">.</span><span class="n">write_region</span><span class="p">(</span><span class="n">shard_data</span><span class="p">,</span> <span class="n">dest_region</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="OmeZarrConverter">
@@ -291,6 +346,8 @@
         <span class="n">tbatch</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">auto_dask_cluster</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">n_workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">shard_limit_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_SHARD_LIMIT_BYTES</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initialize an OME-Zarr converter with flexible scene selection,</span>
@@ -317,10 +374,15 @@
 <span class="sd">            If provided, convenience options like ``num_levels`` and ``downsample_z``</span>
 <span class="sd">            are ignored.</span>
 <span class="sd">        chunk_shape : Optional[Union[Tuple[int, ...], Tuple[Tuple[int, ...], ...]]]</span>
-<span class="sd">            Chunk shape for Zarr arrays. Either a single shape applied to all levels</span>
-<span class="sd">            (e.g., ``(1, 1, 16, 256, 256)``) or per-level shapes. Writer validates.</span>
-<span class="sd">        shard_factor : Optional[Tuple[int, ...]]</span>
-<span class="sd">            Optional shard factor per axis (Zarr v3 only). Writer validates.</span>
+<span class="sd">            Explicit chunk shape for the written arrays (applies to both Zarr v2</span>
+<span class="sd">            and v3) — a single tuple applied to all levels, or per-level tuples,</span>
+<span class="sd">            in the array&#39;s axis order (e.g. ``(1, 1, 1, 512, 512)`` for TCZYX).</span>
+<span class="sd">            The writer validates it against each level&#39;s shape. When provided</span>
+<span class="sd">            under v3 it also disables the auto-shard calculation, since the</span>
+<span class="sd">            shard layout is derived from the chunk shape.</span>
+<span class="sd">        shard_shape : Optional[Union[Tuple[int, ...], Tuple[Tuple[int, ...], ...]]]</span>
+<span class="sd">            Explicit shard shape (Zarr v3 only).  When provided, disables the</span>
+<span class="sd">            v3 auto-shard calculation.</span>
 <span class="sd">        compressor : Optional[Union[zarr.codecs.BloscCodec, numcodecs.abc.Codec]]</span>
 <span class="sd">            Compression codec. For v2 use ``numcodecs.Blosc``; for v3 use</span>
 <span class="sd">            ``zarr.codecs.BloscCodec``.</span>
@@ -348,19 +410,23 @@
 <span class="sd">            Physical scale at level 0 per axis. If omitted, values are derived from</span>
 <span class="sd">            ``BioImage.scale`` for present axes.</span>
 <span class="sd">        num_levels : Optional[int]</span>
-<span class="sd">            Convenience: number of pyramid levels to generate (including level 0).</span>
-<span class="sd">            If set, an XY half-pyramid is built by default:</span>
+<span class="sd">            Number of pyramid levels (including level 0) to generate via a</span>
+<span class="sd">            simple XY half-pyramid.  When set, overrides the v3 atlas-based</span>
+<span class="sd">            auto-pyramid:</span>
+
 <span class="sd">            - ``1`` = only level 0</span>
 <span class="sd">            - ``2`` = level 0 + one XY half</span>
 <span class="sd">            - ``3`` = level 0 + two XY halves, etc.</span>
-<span class="sd">            If ``downsample_z`` is True, Z is downsampled along with XY at each level.</span>
+
+<span class="sd">            Ignored if ``level_shapes`` is provided.</span>
 <span class="sd">        downsample_z : bool, default = False</span>
-<span class="sd">            Whether to include the Z axis in downsampling when building levels</span>
-<span class="sd">            via ``num_levels``. Ignored if ``level_shapes`` is provided.</span>
+<span class="sd">            Also halve Z at each level when building the ``num_levels`` pyramid.</span>
+<span class="sd">            Ignored if ``level_shapes`` is provided.</span>
 <span class="sd">        memory_target : Optional[int]</span>
-<span class="sd">            If set (bytes), suggests a single chunk shape derived from level-0 shape</span>
-<span class="sd">            and ``dtype`` via ``chunk_size_from_memory_target``. Writer may reuse or</span>
-<span class="sd">            adjust per level.</span>
+<span class="sd">            Chunk budget in bytes.  For ``zarr_format=3`` this is passed as</span>
+<span class="sd">            ``chunk_limit_bytes`` to the auto-chunk/shard layout; for other</span>
+<span class="sd">            formats it drives ``multiscale_chunk_size_from_memory_target``.</span>
+<span class="sd">            Has no effect when ``chunk_shape`` is set explicitly. Default: 16 MiB.</span>
 <span class="sd">        start_t_src : Optional[int]</span>
 <span class="sd">            Source T index at which to begin reading from the BioImage. Default: use</span>
 <span class="sd">            writer default.</span>
@@ -375,7 +441,11 @@
 <span class="sd">        auto_dask_cluster : bool</span>
 <span class="sd">            If True, automatically spin up a local Dask cluster with</span>
 <span class="sd">            8 workers (using `Cluster(n_workers=8).start()`) before any</span>
-<span class="sd">            conv</span>
+<span class="sd">            conversion.</span>
+<span class="sd">        n_workers : int</span>
+<span class="sd">            Number of worker *processes* for shard writes (auto-layout path).</span>
+<span class="sd">        shard_limit_bytes : int</span>
+<span class="sd">            Maximum uncompressed size of a level-0 shard. Default: 4 GiB.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">source</span> <span class="o">=</span> <span class="n">source</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">destination</span> <span class="o">=</span> <span class="n">destination</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="o">.</span><span class="n">cwd</span><span class="p">())</span>
@@ -428,7 +498,9 @@
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_src</span> <span class="o">=</span> <span class="n">start_t_src</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_dest</span> <span class="o">=</span> <span class="n">start_t_dest</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_tbatch</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">tbatch</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">tbatch</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tbatch</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">tbatch</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">tbatch</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_n_workers</span> <span class="o">=</span> <span class="n">n_workers</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_shard_limit_bytes</span> <span class="o">=</span> <span class="n">shard_limit_bytes</span></div>
 
 
     <span class="c1"># -------------------------------------------------------------------------</span>
@@ -588,22 +660,66 @@
             <span class="n">channel_models</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_channels</span><span class="p">(</span><span class="n">axis_names</span><span class="p">,</span> <span class="n">ccount</span><span class="p">)</span>
             <span class="n">pps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_physical_pixel_sizes</span><span class="p">(</span><span class="n">axis_names</span><span class="p">)</span>
 
+            <span class="n">dims</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ax</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">axis_names</span><span class="p">)</span>
+
+            <span class="c1"># True when dims are a subset of TCZYX with Y and X present.</span>
+            <span class="n">ome_dims</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="n">DimensionNames</span><span class="o">.</span><span class="n">SpatialY</span><span class="p">,</span>
+                    <span class="n">DimensionNames</span><span class="o">.</span><span class="n">SpatialX</span><span class="p">,</span>
+                <span class="p">}</span>
+                <span class="o">&lt;=</span> <span class="nb">set</span><span class="p">(</span><span class="n">dims</span><span class="p">)</span>
+                <span class="o">&lt;=</span> <span class="nb">set</span><span class="p">(</span><span class="n">DEFAULT_DIMENSION_ORDER</span><span class="p">)</span>
+            <span class="p">)</span>
+
             <span class="c1"># (3) Scale to writer</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_level_shapes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">writer_level_shapes_param</span><span class="p">:</span> <span class="n">MultiResolutionShapeSpec</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_writer_level_shapes</span>
                 <span class="p">)</span>
+            <span class="k">elif</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_writer_zarr_format</span> <span class="o">==</span> <span class="mi">3</span>
+                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_helper_num_levels</span> <span class="ow">is</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="n">ome_dims</span>
+            <span class="p">):</span>
+                <span class="c1"># v3 default: auto-generate pyramid levels down to atlas fit.</span>
+                <span class="n">writer_level_shapes_param</span> <span class="o">=</span> <span class="n">build_pyramid_shapes</span><span class="p">(</span><span class="n">level0_shape</span><span class="p">,</span> <span class="n">dims</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">derived</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_level_shapes_simple</span><span class="p">(</span><span class="n">axis_names</span><span class="p">,</span> <span class="n">level0_shape</span><span class="p">)</span>
                 <span class="n">writer_level_shapes_param</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="n">derived</span> <span class="k">if</span> <span class="n">derived</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">level0_shape</span><span class="p">)</span>
                 <span class="p">)</span>
 
-            <span class="c1"># (4) Chunking</span>
+            <span class="c1"># (4) Chunking + sharding</span>
+            <span class="n">writer_shard_shape_param</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_shard_shape</span>
+
+            <span class="n">can_auto_layout</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_writer_zarr_format</span> <span class="o">==</span> <span class="mi">3</span>
+                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_chunk_shape</span> <span class="ow">is</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_shard_shape</span> <span class="ow">is</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="n">ome_dims</span>
+            <span class="p">)</span>
+
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_chunk_shape</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">writer_chunk_shape_param</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
                     <span class="n">MultiResolutionShapeSpec</span>
                 <span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_chunk_shape</span>
+            <span class="k">elif</span> <span class="n">can_auto_layout</span><span class="p">:</span>
+                <span class="n">chunk_limit</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_helper_memory_target_bytes</span> <span class="ow">or</span> <span class="n">DEFAULT_CHUNK_LIMIT_BYTES</span>
+                <span class="p">)</span>
+                <span class="n">level_shapes_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_per_level_shapes</span><span class="p">(</span>
+                    <span class="n">writer_level_shapes_param</span>
+                <span class="p">)</span>
+                <span class="n">auto_chunks</span><span class="p">,</span> <span class="n">auto_shards</span> <span class="o">=</span> <span class="n">choose_pyramid_layout</span><span class="p">(</span>
+                    <span class="n">level_shapes</span><span class="o">=</span><span class="n">level_shapes_list</span><span class="p">,</span>
+                    <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">,</span>
+                    <span class="n">dims</span><span class="o">=</span><span class="n">dims</span><span class="p">,</span>
+                    <span class="n">chunk_limit_bytes</span><span class="o">=</span><span class="n">chunk_limit</span><span class="p">,</span>
+                    <span class="n">shard_limit_bytes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_shard_limit_bytes</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">writer_chunk_shape_param</span> <span class="o">=</span> <span class="n">auto_chunks</span>
+                <span class="n">writer_shard_shape_param</span> <span class="o">=</span> <span class="n">auto_shards</span>
             <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_helper_memory_target_bytes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="c1"># Normalize level shapes to per-level list for the helper</span>
                 <span class="n">level_shapes_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_per_level_shapes</span><span class="p">(</span>
@@ -639,7 +755,7 @@
                     <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
                     <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">{</span>
                         <span class="s2">&quot;chunk_shape&quot;</span><span class="p">:</span> <span class="n">writer_chunk_shape_param</span><span class="p">,</span>
-                        <span class="s2">&quot;shard_shape&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_shard_shape</span><span class="p">,</span>
+                        <span class="s2">&quot;shard_shape&quot;</span><span class="p">:</span> <span class="n">writer_shard_shape_param</span><span class="p">,</span>
                         <span class="s2">&quot;compressor&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_compressor</span><span class="p">,</span>
                         <span class="s2">&quot;zarr_format&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_zarr_format</span><span class="p">,</span>
                         <span class="s2">&quot;image_name&quot;</span><span class="p">:</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_writer_image_name</span> <span class="ow">or</span> <span class="n">base</span><span class="p">),</span>
@@ -662,32 +778,123 @@
             <span class="n">bio</span><span class="o">.</span><span class="n">set_scene</span><span class="p">(</span><span class="n">scene_index</span><span class="p">)</span>
             <span class="n">r</span> <span class="o">=</span> <span class="n">bio</span><span class="o">.</span><span class="n">reader</span>
             <span class="n">native_order</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">dims</span><span class="o">.</span><span class="n">order</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
-            <span class="n">data_all</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get_image_dask_data</span><span class="p">(</span><span class="n">native_order</span><span class="p">)</span>
 
-            <span class="c1"># (8) Write</span>
-            <span class="n">has_t</span> <span class="o">=</span> <span class="s2">&quot;t&quot;</span> <span class="ow">in</span> <span class="n">axis_names</span>
-            <span class="n">t_total</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">dims</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span> <span class="k">if</span> <span class="n">has_t</span> <span class="k">else</span> <span class="mi">1</span>
+            <span class="c1"># (8) Write — shard-aligned region writes via write_region.</span>
+            <span class="c1"># Every call covers exactly one shard boundary at every pyramid level</span>
+            <span class="c1"># so no shard is ever read back to be merged (no read-modify-write).</span>
+            <span class="n">writer</span><span class="o">.</span><span class="n">initialize</span><span class="p">()</span>
 
-            <span class="k">if</span> <span class="n">has_t</span> <span class="ow">and</span> <span class="n">t_total</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-                <span class="n">base_t_src</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_src</span> <span class="ow">or</span> <span class="mi">0</span>
-                <span class="n">base_t_dest</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_dest</span> <span class="ow">or</span> <span class="mi">0</span>
-                <span class="n">batch_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tbatch</span> <span class="ow">or</span> <span class="n">t_total</span>
-                <span class="c1"># find which axis index is T once (e.g. axis 0 in &quot;TCYX&quot;)</span>
-                <span class="n">t_axis</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">native_order</span><span class="p">)</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;T&quot;</span><span class="p">)</span>
-                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">t_total</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">):</span>
-                    <span class="n">batch</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">t_total</span> <span class="o">-</span> <span class="n">i</span><span class="p">)</span>
-                    <span class="c1"># pre-slice to this batch window so the writer only holds</span>
-                    <span class="c1"># the dask graph for these frames, not the full array</span>
-                    <span class="n">slices</span> <span class="o">=</span> <span class="p">[</span><span class="nb">slice</span><span class="p">(</span><span class="kc">None</span><span class="p">)]</span> <span class="o">*</span> <span class="n">data_all</span><span class="o">.</span><span class="n">ndim</span>
-                    <span class="n">slices</span><span class="p">[</span><span class="n">t_axis</span><span class="p">]</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">base_t_src</span> <span class="o">+</span> <span class="n">i</span><span class="p">,</span> <span class="n">base_t_src</span> <span class="o">+</span> <span class="n">i</span> <span class="o">+</span> <span class="n">batch</span><span class="p">)</span>
-                    <span class="n">writer</span><span class="o">.</span><span class="n">write_timepoints</span><span class="p">(</span>
-                        <span class="n">data</span><span class="o">=</span><span class="n">data_all</span><span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">slices</span><span class="p">)],</span>
-                        <span class="n">start_T_dest</span><span class="o">=</span><span class="n">base_t_dest</span> <span class="o">+</span> <span class="n">i</span><span class="p">,</span>  <span class="c1"># advance destination each batch</span>
-                        <span class="n">total_T</span><span class="o">=</span><span class="n">batch</span><span class="p">,</span>
-                    <span class="p">)</span>
+            <span class="k">if</span> <span class="n">can_auto_layout</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_write_auto_layout_shards</span><span class="p">(</span>
+                    <span class="n">out_path</span><span class="p">,</span> <span class="n">native_order</span><span class="p">,</span> <span class="n">scene_index</span><span class="p">,</span> <span class="n">auto_shards</span><span class="p">,</span> <span class="n">level0_shape</span>
+                <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">writer</span><span class="o">.</span><span class="n">write_full_volume</span><span class="p">(</span><span class="n">data_all</span><span class="p">)</span></div>
-</div>
+                <span class="n">t_ax</span> <span class="o">=</span> <span class="n">dims</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;T&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="s2">&quot;t&quot;</span> <span class="ow">in</span> <span class="n">axis_names</span> <span class="k">else</span> <span class="kc">None</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_write_fallback</span><span class="p">(</span><span class="n">writer</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">native_order</span><span class="p">,</span> <span class="n">t_ax</span><span class="p">,</span> <span class="n">level0_shape</span><span class="p">)</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_write_auto_layout_shards</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">out_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+        <span class="n">native_order</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">scene_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">auto_shards</span><span class="p">:</span> <span class="n">MultiResolutionShapeSpec</span><span class="p">,</span>
+        <span class="n">level0_shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Write each disjoint level-0 shard via its own ``write_region`` call.</span>
+
+<span class="sd">        Every shard covers exactly one shard boundary at every pyramid level, so</span>
+<span class="sd">        no shard is ever read back to be merged. The write phase is GIL-bound, so</span>
+<span class="sd">        when ``n_workers &gt; 1`` the shards are dispatched to a</span>
+<span class="sd">        ``ProcessPoolExecutor`` (the parent has already created the store via</span>
+<span class="sd">        ``writer.initialize()``); otherwise they are written in-process.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">shard0</span> <span class="o">=</span> <span class="n">auto_shards</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">per_ax</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">[</span>
+                <span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">s</span> <span class="o">+</span> <span class="n">shard0</span><span class="p">[</span><span class="n">ax</span><span class="p">],</span> <span class="n">level0_shape</span><span class="p">[</span><span class="n">ax</span><span class="p">]))</span>
+                <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">level0_shape</span><span class="p">[</span><span class="n">ax</span><span class="p">],</span> <span class="n">shard0</span><span class="p">[</span><span class="n">ax</span><span class="p">])</span>
+            <span class="p">]</span>
+            <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">level0_shape</span><span class="p">))</span>
+        <span class="p">]</span>
+        <span class="n">shard_bounds</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">_Bounds</span><span class="p">,</span> <span class="n">_Bounds</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="n">bounds</span><span class="p">,</span> <span class="n">bounds</span><span class="p">)</span> <span class="k">for</span> <span class="n">bounds</span> <span class="ow">in</span> <span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="o">*</span><span class="n">per_ax</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="n">out_dtype_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">)</span>
+        <span class="n">n_workers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_n_workers</span>
+
+        <span class="k">if</span> <span class="n">n_workers</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">ProcessPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">n_workers</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+                <span class="n">futures</span> <span class="o">=</span> <span class="p">[</span>
+                    <span class="n">pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span>
+                        <span class="n">_write_shard_process</span><span class="p">,</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">source</span><span class="p">,</span>
+                        <span class="nb">str</span><span class="p">(</span><span class="n">out_path</span><span class="p">),</span>
+                        <span class="n">native_order</span><span class="p">,</span>
+                        <span class="n">scene_index</span><span class="p">,</span>
+                        <span class="n">out_dtype_str</span><span class="p">,</span>
+                        <span class="n">src_bounds</span><span class="p">,</span>
+                        <span class="n">dest_bounds</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">for</span> <span class="n">src_bounds</span><span class="p">,</span> <span class="n">dest_bounds</span> <span class="ow">in</span> <span class="n">shard_bounds</span>
+                <span class="p">]</span>
+                <span class="k">for</span> <span class="n">future</span> <span class="ow">in</span> <span class="n">futures</span><span class="p">:</span>
+                    <span class="n">future</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>  <span class="c1"># surface any worker exception</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">src_bounds</span><span class="p">,</span> <span class="n">dest_bounds</span> <span class="ow">in</span> <span class="n">shard_bounds</span><span class="p">:</span>
+                <span class="n">_write_shard_process</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">source</span><span class="p">,</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">out_path</span><span class="p">),</span>
+                    <span class="n">native_order</span><span class="p">,</span>
+                    <span class="n">scene_index</span><span class="p">,</span>
+                    <span class="n">out_dtype_str</span><span class="p">,</span>
+                    <span class="n">src_bounds</span><span class="p">,</span>
+                    <span class="n">dest_bounds</span><span class="p">,</span>
+                <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_write_fallback</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">writer</span><span class="p">:</span> <span class="n">OMEZarrWriter</span><span class="p">,</span>
+        <span class="n">reader</span><span class="p">:</span> <span class="n">Reader</span><span class="p">,</span>
+        <span class="n">native_order</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">t_ax</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+        <span class="n">level0_shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Single-threaded fallback write for non-auto-layout stores.</span>
+
+<span class="sd">        Reads and writes the image in ``self._tbatch``-sized batches along T,</span>
+<span class="sd">        defaulting to one timepoint per write so peak memory stays bounded.  The</span>
+<span class="sd">        per-batch T slice is delegated to the reader&#39;s dimension kwargs (lazily,</span>
+<span class="sd">        via ``get_image_dask_data``).  When there is no T axis the image is a</span>
+<span class="sd">        single volume, written as one batch.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Source/destination may start at different T offsets (e.g. appending to</span>
+        <span class="c1"># an existing store), so track the read and write T origins separately.</span>
+        <span class="n">base_t_src</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_src</span> <span class="ow">or</span> <span class="mi">0</span>
+        <span class="n">base_t_dest</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_dest</span> <span class="ow">or</span> <span class="mi">0</span>
+
+        <span class="c1"># No T axis → treat the whole volume as a single batch (one iteration).</span>
+        <span class="n">t_total</span> <span class="o">=</span> <span class="n">level0_shape</span><span class="p">[</span><span class="n">t_ax</span><span class="p">]</span> <span class="k">if</span> <span class="n">t_ax</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mi">1</span>
+        <span class="n">batch_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tbatch</span> <span class="ow">or</span> <span class="mi">1</span>
+
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">t_total</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">):</span>
+            <span class="n">t_end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">t_total</span><span class="p">)</span>
+
+            <span class="c1"># Default to the full extent on every axis; only T is sub-sliced.</span>
+            <span class="n">dest_slices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">slice</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">level0_shape</span><span class="p">]</span>
+            <span class="n">read_kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">slice</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="n">t_ax</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># Read this T window from the source; write it at the (possibly</span>
+                <span class="c1"># offset) destination T window. Other axes stay full-extent.</span>
+                <span class="n">read_kwargs</span><span class="p">[</span><span class="n">DimensionNames</span><span class="o">.</span><span class="n">Time</span><span class="p">]</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span>
+                    <span class="n">base_t_src</span> <span class="o">+</span> <span class="n">i</span><span class="p">,</span> <span class="n">base_t_src</span> <span class="o">+</span> <span class="n">t_end</span>
+                <span class="p">)</span>
+                <span class="n">dest_slices</span><span class="p">[</span><span class="n">t_ax</span><span class="p">]</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">base_t_dest</span> <span class="o">+</span> <span class="n">i</span><span class="p">,</span> <span class="n">base_t_dest</span> <span class="o">+</span> <span class="n">t_end</span><span class="p">)</span>
+
+            <span class="c1"># get_image_dask_data slices lazily, so .compute() only materializes</span>
+            <span class="c1"># this batch — not the whole image.</span>
+            <span class="n">batch</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">get_image_dask_data</span><span class="p">(</span><span class="n">native_order</span><span class="p">,</span> <span class="o">**</span><span class="n">read_kwargs</span><span class="p">)</span>
+            <span class="n">writer</span><span class="o">.</span><span class="n">write_region</span><span class="p">(</span><span class="n">batch</span><span class="o">.</span><span class="n">compute</span><span class="p">(),</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">dest_slices</span><span class="p">))</span></div>
 
 </pre></div>
         </article>

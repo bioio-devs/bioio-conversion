@@ -505,12 +505,16 @@ dimension at each level if a Z axis exists.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">--chunk-shape-per-level</span></code>: semicolon-separated chunk shapes per level.
 Overrides <code class="docutils literal notranslate"><span class="pre">--chunk-shape</span></code> and <code class="docutils literal notranslate"><span class="pre">--memory-target</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">--memory-target</span></code>: approximate in-memory byte budget used to derive
-per-level chunk shapes when explicit chunk shapes are not provided.</p></li>
+per-level chunk shapes when explicit chunk shapes are not provided.
+Defaults to 16 MiB if unset.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">--shard-shape</span></code>: single shard shape tuple for Zarr v3
 (e.g. <code class="docutils literal notranslate"><span class="pre">1,1,128,1024,1024</span></code>).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">--shard-shape-per-level</span></code>: semicolon-separated shard shapes per level
 (Zarr v3). Overrides <code class="docutils literal notranslate"><span class="pre">--shard-shape</span></code>.</p></li>
 </ul>
+<p>When no explicit chunk/shard shapes are given for a Zarr v3 store, the
+converter derives them automatically with an uncompressed budget of
+<strong>16 MiB per chunk</strong> and <strong>4 GiB per level-0 shard</strong>.</p>
 <p><strong>Writer / metadata options</strong></p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">--dtype</span></code>: output dtype override (e.g. <code class="docutils literal notranslate"><span class="pre">uint16</span></code>, <code class="docutils literal notranslate"><span class="pre">float32</span></code>). If omitted,
