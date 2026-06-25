@@ -27,6 +27,21 @@ from ..sharding import (
 _Bounds = Tuple[Tuple[int, int], ...]
 
 
+def _available_cores() -> int:
+    """Number of cores the current process may actually run on.
+
+    Prefer the process's CPU affinity, which reflects the cores granted by a
+    cgroup/cpuset (e.g. a SLURM ``--cpus-per-task`` allocation) rather than the
+    node's total hardware. ``cpu_affinity`` is unavailable on platforms without
+    an affinity API (notably macOS), where it raises ``AttributeError``; there
+    we fall back to the physical core count.
+    """
+    try:
+        return max(1, len(psutil.Process().cpu_affinity()))
+    except AttributeError:
+        return max(1, psutil.cpu_count(logical=False) or 1)
+
+
 def _write_shard_process(
     source: str,
     store_path: str,
@@ -198,8 +213,9 @@ class OmeZarrConverter:
             Override output data type; defaults to the reader’s dtype.
         n_workers : Optional[int]
             Number of worker *processes* for shard writes (auto-layout path).
-            If ``None`` (default), derived from the host's physical core count
-            (one process per physical core, floored at 1).
+            If ``None`` (default), derived from the cores actually available to
+            the process. One process per core,
+            floored at 1.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
         """
@@ -250,9 +266,10 @@ class OmeZarrConverter:
         self._start_t_src = start_t_src
         self._start_t_dest = start_t_dest
         self._tbatch = None if tbatch is None else tbatch
-        # Default to one process per physical core (shard writes are GIL-bound
-        # CPU work); cpu_count returns None when undetermined, hence the floor.
-        self._n_workers = n_workers or psutil.cpu_count(logical=False) or 1
+        # Default to one process per available core (shard writes are GIL-bound
+        # CPU work). _available_cores honors a cgroup/SLURM allocation so we do
+        # not oversubscribe a partial node; it is floored at 1.
+        self._n_workers = n_workers or _available_cores()
         self._shard_limit_bytes = shard_limit_bytes
 
     # -------------------------------------------------------------------------
