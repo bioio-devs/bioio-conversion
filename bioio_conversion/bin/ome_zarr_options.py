@@ -494,7 +494,8 @@ def ome_zarr_options(
                     "Advanced: approximate in-memory byte budget to derive "
                     "per-level chunk shapes. If set, the writer computes "
                     "chunk shapes from this target (unless explicit "
-                    "--chunk-shape/--chunk-shape-per-level are given)."
+                    "--chunk-shape/--chunk-shape-per-level are given). "
+                    "Defaults to 16 MiB if unset."
                 ),
             ),
             click.option(

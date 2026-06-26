@@ -262,10 +262,15 @@ bioio-convert SOURCE -d DESTINATION [options]
   Overrides `--chunk-shape` and `--memory-target`.
 * `--memory-target`: approximate in-memory byte budget used to derive
   per-level chunk shapes when explicit chunk shapes are not provided.
+  Defaults to 16 MiB if unset.
 * `--shard-shape`: single shard shape tuple for Zarr v3
   (e.g. `1,1,128,1024,1024`).
 * `--shard-shape-per-level`: semicolon-separated shard shapes per level
   (Zarr v3). Overrides `--shard-shape`.
+
+When no explicit chunk/shard shapes are given for a Zarr v3 store, the
+converter derives them automatically with an uncompressed budget of
+**16 MiB per chunk** and **4 GiB per level-0 shard**.
 
 **Writer / metadata options**
 

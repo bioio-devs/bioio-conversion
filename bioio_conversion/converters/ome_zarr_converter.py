@@ -8,7 +8,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numcodecs
 import numpy as np
 from bioio import BioImage
-from bioio_base.dimensions import DimensionNames
+from bioio_base.dimensions import DEFAULT_DIMENSION_ORDER, DimensionNames
+from bioio_base.reader import Reader
 from bioio_ome_zarr.writers import Channel, OMEZarrWriter
 from bioio_ome_zarr.writers.ome_zarr_writer import MultiResolutionShapeSpec
 from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_target
@@ -19,8 +20,8 @@ from ..cluster import Cluster
 from ..sharding import (
     DEFAULT_CHUNK_LIMIT_BYTES,
     DEFAULT_SHARD_LIMIT_BYTES,
-    _build_pyramid_shapes,
-    _choose_pyramid_layout,
+    build_pyramid_shapes,
+    choose_pyramid_layout,
 )
 
 # Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.
@@ -60,8 +61,8 @@ def _write_shard_process(
         for i in range(len(native_order))
     }
     # Read the shard via the reader's get_image_data slicing.
-    shard_data = bio.reader.get_image_data(native_order, **region_kwargs).astype(
-        out_dtype, copy=False
+    shard_data = np.asarray(
+        bio.reader.get_image_data(native_order, **region_kwargs), dtype=out_dtype
     )
 
     # Attach to the store the parent already initialized and write this shard.
@@ -133,9 +134,12 @@ class OmeZarrConverter:
             If provided, convenience options like ``num_levels`` and ``downsample_z``
             are ignored.
         chunk_shape : Optional[Union[Tuple[int, ...], Tuple[Tuple[int, ...], ...]]]
-            Explicit chunk shape — a single tuple applied to all levels or
-            per-level tuples.  When provided, disables the v3 auto-chunk/shard
-            calculation.
+            Explicit chunk shape for the written arrays (applies to both Zarr v2
+            and v3) — a single tuple applied to all levels, or per-level tuples,
+            in the array's axis order (e.g. ``(1, 1, 1, 512, 512)`` for TCZYX).
+            The writer validates it against each level's shape. When provided
+            under v3 it also disables the auto-shard calculation, since the
+            shard layout is derived from the chunk shape.
         shard_shape : Optional[Union[Tuple[int, ...], Tuple[Tuple[int, ...], ...]]]
             Explicit shard shape (Zarr v3 only).  When provided, disables the
             v3 auto-shard calculation.
@@ -182,7 +186,7 @@ class OmeZarrConverter:
             Chunk budget in bytes.  For ``zarr_format=3`` this is passed as
             ``chunk_limit_bytes`` to the auto-chunk/shard layout; for other
             formats it drives ``multiscale_chunk_size_from_memory_target``.
-            Has no effect when ``chunk_shape`` is set explicitly.
+            Has no effect when ``chunk_shape`` is set explicitly. Default: 16 MiB.
         start_t_src : Optional[int]
             Source T index at which to begin reading from the BioImage. Default: use
             writer default.
@@ -426,20 +430,14 @@ class OmeZarrConverter:
 
             dims = "".join(ax.upper() for ax in axis_names)
 
-            _ome_dims = (
-                DimensionNames.SpatialY in dims
-                and DimensionNames.SpatialX in dims
-                and all(
-                    d
-                    in (
-                        DimensionNames.Time,
-                        DimensionNames.Channel,
-                        DimensionNames.SpatialZ,
-                        DimensionNames.SpatialY,
-                        DimensionNames.SpatialX,
-                    )
-                    for d in dims
-                )
+            # True when dims are a subset of TCZYX with Y and X present.
+            ome_dims = (
+                {
+                    DimensionNames.SpatialY,
+                    DimensionNames.SpatialX,
+                }
+                <= set(dims)
+                <= set(DEFAULT_DIMENSION_ORDER)
             )
 
             # (3) Scale to writer
@@ -450,10 +448,10 @@ class OmeZarrConverter:
             elif (
                 self._writer_zarr_format == 3
                 and self._helper_num_levels is None
-                and _ome_dims
+                and ome_dims
             ):
                 # v3 default: auto-generate pyramid levels down to atlas fit.
-                writer_level_shapes_param = _build_pyramid_shapes(level0_shape, dims)
+                writer_level_shapes_param = build_pyramid_shapes(level0_shape, dims)
             else:
                 derived = self._build_level_shapes_simple(axis_names, level0_shape)
                 writer_level_shapes_param = (
@@ -463,25 +461,25 @@ class OmeZarrConverter:
             # (4) Chunking + sharding
             writer_shard_shape_param = self._writer_shard_shape
 
-            _can_auto_layout = (
+            can_auto_layout = (
                 self._writer_zarr_format == 3
                 and self._writer_chunk_shape is None
                 and self._writer_shard_shape is None
-                and _ome_dims
+                and ome_dims
             )
 
             if self._writer_chunk_shape is not None:
                 writer_chunk_shape_param: Optional[
                     MultiResolutionShapeSpec
                 ] = self._writer_chunk_shape
-            elif _can_auto_layout:
+            elif can_auto_layout:
                 chunk_limit = (
                     self._helper_memory_target_bytes or DEFAULT_CHUNK_LIMIT_BYTES
                 )
                 level_shapes_list = self._ensure_per_level_shapes(
                     writer_level_shapes_param
                 )
-                auto_chunks, auto_shards = _choose_pyramid_layout(
+                auto_chunks, auto_shards = choose_pyramid_layout(
                     level_shapes=level_shapes_list,
                     dtype=self.output_dtype,
                     dims=dims,
@@ -548,21 +546,19 @@ class OmeZarrConverter:
             bio.set_scene(scene_index)
             r = bio.reader
             native_order = r.dims.order.upper()
-            data_all = r.get_image_dask_data(native_order)
 
             # (8) Write — shard-aligned region writes via write_region.
             # Every call covers exactly one shard boundary at every pyramid level
             # so no shard is ever read back to be merged (no read-modify-write).
             writer.initialize()
 
-            if _can_auto_layout:
+            if can_auto_layout:
                 self._write_auto_layout_shards(
                     out_path, native_order, scene_index, auto_shards, level0_shape
                 )
             else:
-                has_t = "t" in axis_names
-                t_ax = dims.index("T") if has_t else None
-                self._write_fallback(writer, data_all, has_t, t_ax, level0_shape)
+                t_ax = dims.index("T") if "t" in axis_names else None
+                self._write_fallback(writer, r, native_order, t_ax, level0_shape)
 
     def _write_auto_layout_shards(
         self,
@@ -626,37 +622,43 @@ class OmeZarrConverter:
     def _write_fallback(
         self,
         writer: OMEZarrWriter,
-        data_all: Any,
-        has_t: bool,
+        reader: Reader,
+        native_order: str,
         t_ax: Optional[int],
         level0_shape: Tuple[int, ...],
     ) -> None:
         """Single-threaded fallback write for non-auto-layout stores.
 
-        Writes the whole image in one region when there is no T axis, otherwise
-        in ``self._tbatch``-sized batches along T.
+        Reads and writes the image in ``self._tbatch``-sized batches along T,
+        defaulting to one timepoint per write so peak memory stays bounded.  The
+        per-batch T slice is delegated to the reader's dimension kwargs (lazily,
+        via ``get_image_dask_data``).  When there is no T axis the image is a
+        single volume, written as one batch.
         """
-        if not has_t:
-            writer.write_region(
-                data_all.compute(),
-                tuple(slice(0, s) for s in level0_shape),
-            )
-            return
-
-        assert t_ax is not None
+        # Source/destination may start at different T offsets (e.g. appending to
+        # an existing store), so track the read and write T origins separately.
         base_t_src = self._start_t_src or 0
         base_t_dest = self._start_t_dest or 0
-        t_total = level0_shape[t_ax]
-        batch_size = self._tbatch or t_total
+
+        # No T axis → treat the whole volume as a single batch (one iteration).
+        t_total = level0_shape[t_ax] if t_ax is not None else 1
+        batch_size = self._tbatch or 1
+
         for i in range(0, t_total, batch_size):
             t_end = min(i + batch_size, t_total)
-            dest_slices: List[slice] = [
-                slice(0, level0_shape[ax]) for ax in range(len(level0_shape))
-            ]
-            dest_slices[t_ax] = slice(base_t_dest + i, base_t_dest + t_end)
-            src_slices: List[slice] = list(dest_slices)
-            src_slices[t_ax] = slice(base_t_src + i, base_t_src + t_end)
-            writer.write_region(
-                data_all[tuple(src_slices)].compute(),
-                tuple(dest_slices),
-            )
+
+            # Default to the full extent on every axis; only T is sub-sliced.
+            dest_slices: List[slice] = [slice(0, s) for s in level0_shape]
+            read_kwargs: Dict[str, slice] = {}
+            if t_ax is not None:
+                # Read this T window from the source; write it at the (possibly
+                # offset) destination T window. Other axes stay full-extent.
+                read_kwargs[DimensionNames.Time] = slice(
+                    base_t_src + i, base_t_src + t_end
+                )
+                dest_slices[t_ax] = slice(base_t_dest + i, base_t_dest + t_end)
+
+            # get_image_dask_data slices lazily, so .compute() only materializes
+            # this batch — not the whole image.
+            batch = reader.get_image_dask_data(native_order, **read_kwargs)
+            writer.write_region(batch.compute(), tuple(dest_slices))
