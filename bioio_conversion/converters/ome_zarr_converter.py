@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numcodecs
 import numpy as np
+import psutil
 from bioio import BioImage
 from bioio_base.dimensions import DEFAULT_DIMENSION_ORDER, DimensionNames
 from bioio_base.reader import Reader
@@ -15,7 +16,6 @@ from bioio_ome_zarr.writers.ome_zarr_writer import MultiResolutionShapeSpec
 from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_target
 from zarr.codecs import BloscCodec
 
-from ..cluster import Cluster
 from ..sharding import (
     DEFAULT_CHUNK_LIMIT_BYTES,
     DEFAULT_SHARD_LIMIT_BYTES,
@@ -25,6 +25,21 @@ from ..sharding import (
 
 # Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.
 _Bounds = Tuple[Tuple[int, int], ...]
+
+
+def _available_cores() -> int:
+    """Number of cores the current process may actually run on.
+
+    Prefer the process's CPU affinity, which reflects the cores granted by a
+    cgroup/cpuset (e.g. a SLURM ``--cpus-per-task`` allocation) rather than the
+    node's total hardware. ``cpu_affinity`` is unavailable on platforms without
+    an affinity API (notably macOS), where it raises ``AttributeError``; there
+    we fall back to the physical core count.
+    """
+    try:
+        return max(1, len(psutil.Process().cpu_affinity()))
+    except AttributeError:
+        return max(1, psutil.cpu_count(logical=False) or 1)
 
 
 def _write_shard_process(
@@ -104,8 +119,7 @@ class OmeZarrConverter:
         start_t_dest: Optional[int] = None,
         tbatch: Optional[int] = None,
         dtype: Optional[Union[str, np.dtype]] = None,
-        auto_dask_cluster: bool = False,
-        n_workers: int = 1,
+        n_workers: Optional[int] = None,
         shard_limit_bytes: int = DEFAULT_SHARD_LIMIT_BYTES,
     ) -> None:
         """
@@ -197,23 +211,17 @@ class OmeZarrConverter:
             as available in both source and destination.
         dtype : Optional[Union[str, np.dtype]]
             Override output data type; defaults to the reader’s dtype.
-        auto_dask_cluster : bool
-            If True, automatically spin up a local Dask cluster with
-            8 workers (using `Cluster(n_workers=8).start()`) before any
-            conversion.
-        n_workers : int
+        n_workers : Optional[int]
             Number of worker *processes* for shard writes (auto-layout path).
+            If ``None`` (default), derived from the cores actually available to
+            the process. One process per core,
+            floored at 1.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
         """
         self.source = source
         self.destination = destination or str(Path.cwd())
         self.output_basename = name or Path(source).stem
-
-        # Optional local Dask cluster
-        if auto_dask_cluster:
-            cluster = Cluster(n_workers=8)
-            cluster.start()
 
         self.bioimage = BioImage(self.source)
         self.scene_names = self.bioimage.scenes
@@ -258,7 +266,10 @@ class OmeZarrConverter:
         self._start_t_src = start_t_src
         self._start_t_dest = start_t_dest
         self._tbatch = None if tbatch is None else tbatch
-        self._n_workers = n_workers
+        # Default to one process per available core (shard writes are GIL-bound
+        # CPU work). _available_cores honors a cgroup/SLURM allocation so we do
+        # not oversubscribe a partial node; it is floored at 1.
+        self._n_workers = n_workers or _available_cores()
         self._shard_limit_bytes = shard_limit_bytes
 
     # -------------------------------------------------------------------------

@@ -7,7 +7,7 @@ Run ONE OME-Zarr conversion described in a JSON "data_source" file.
 - Forwards OmeZarrConverter kwargs
 - Outputs:
     - CSV: <out_root>/benchmark_results.csv
-    - Per-run outputs: <out_root>/<dataset-name>/<with|no>_cluster/<out_subdir?>/<timestamp>/
+    - Per-run outputs: <out_root>/<dataset-name>/<out_subdir?>/<timestamp>/
 """
 
 import argparse
@@ -15,15 +15,13 @@ import csv
 import json
 import socket
 import time
-from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import psutil
 from dask import config as dask_config
 
-from bioio_conversion.cluster import Cluster
 from bioio_conversion.converters import OmeZarrConverter
 
 # CSV columns
@@ -33,14 +31,12 @@ FIELDNAMES = [
     "size_label",
     "scene",
     "source",
-    "use_cluster",
     "out_dir",
     "status",
     "error",
     "seconds",
     "started_at",
     "ended_at",
-    "dashboard_link",
     "host",
     "cpu_logical",
     "cpu_physical",
@@ -51,7 +47,6 @@ FIELDNAMES = [
 RUNNER_KEYS = {
     "name",
     "size_label",
-    "use_cluster",
     "out_subdir",
     "source",
 }
@@ -111,12 +106,10 @@ def _writer_kwargs_from_run(run: Dict[str, Any]) -> Dict[str, Any]:
 def _dest_dir_for_run(
     out_root: Path,
     dataset_name: str,
-    use_cluster: bool,
     out_subdir: Optional[str],
     run_id: str,
 ) -> Path:
-    cluster_flag = "with_cluster" if use_cluster else "no_cluster"
-    parts = [out_root, Path(dataset_name), Path(cluster_flag)]
+    parts = [out_root, Path(dataset_name)]
     if out_subdir:
         parts.append(Path(str(out_subdir)))
     parts.append(Path(run_id))
@@ -153,7 +146,6 @@ def run_one(
 ) -> Dict[str, object]:
     dataset_name = str(run.get("name", "unnamed"))
     size_label = str(run.get("size_label", ""))
-    use_cluster = bool(run.get("use_cluster", False))
     out_subdir = run.get("out_subdir")
 
     # REQUIRED: single 'source'
@@ -165,12 +157,11 @@ def run_one(
 
     # Stamp + destination
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest_dir = _dest_dir_for_run(out_root, dataset_name, use_cluster, out_subdir, run_id)
+    dest_dir = _dest_dir_for_run(out_root, dataset_name, out_subdir, run_id)
 
     # Ensure destination + source
     writer_kwargs.setdefault("destination", str(dest_dir))
     writer_kwargs["source"] = source
-    writer_kwargs.setdefault("auto_dask_cluster", False)
 
     # Host/system info
     host = socket.gethostname()
@@ -179,28 +170,16 @@ def run_one(
     mem_total_gb = round(psutil.virtual_memory().total / (1024**3), 2)
 
     started_at = datetime.now()
-    client = None
-    dashboard_link = ""
     status = "fail"
     err_msg = ""
 
     t0 = time.perf_counter()
     try:
-        if use_cluster:
-            cluster = Cluster()
-            client = cluster.start()
-            if client is not None and getattr(client, "dashboard_link", None):
-                dashboard_link = client.dashboard_link
-
         converter = OmeZarrConverter(**writer_kwargs)
 
-        # When not using a distributed cluster, prefer the threaded scheduler.
-        if use_cluster:
-            with nullcontext():
-                converter.convert()
-        else:
-            with dask_config.set(scheduler="threads"):
-                converter.convert()
+        # Lazy reads run on Dask's threaded scheduler.
+        with dask_config.set(scheduler="threads"):
+            converter.convert()
 
         status = "ok"
 
@@ -210,12 +189,6 @@ def run_one(
     finally:
         elapsed = round(time.perf_counter() - t0, 2)
         ended_at = datetime.now()
-
-        if client is not None:
-            try:
-                client.shutdown()
-            except Exception:
-                pass
 
         scene_display = ""
         if "scenes" in writer_kwargs:
@@ -227,14 +200,12 @@ def run_one(
             "size_label": size_label,
             "scene": scene_display,
             "source": source,
-            "use_cluster": use_cluster,
             "out_dir": str(dest_dir),
             "status": status,
             "error": err_msg,
             "seconds": elapsed,
             "started_at": started_at.isoformat(timespec="seconds"),
             "ended_at": ended_at.isoformat(timespec="seconds"),
-            "dashboard_link": dashboard_link,
             "host": host,
             "cpu_logical": cpu_logical,
             "cpu_physical": cpu_physical,
