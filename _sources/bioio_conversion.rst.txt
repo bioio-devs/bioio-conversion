@@ -12,14 +12,6 @@ Subpackages
 Submodules
 ----------
 
-bioio\_conversion.cluster module
---------------------------------
-
-.. automodule:: bioio_conversion.cluster
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
 bioio\_conversion.sharding module
 ---------------------------------
 

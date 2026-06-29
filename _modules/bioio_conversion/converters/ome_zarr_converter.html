@@ -244,6 +244,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numcodecs</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">psutil</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">bioio</span><span class="w"> </span><span class="kn">import</span> <span class="n">BioImage</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">bioio_base.dimensions</span><span class="w"> </span><span class="kn">import</span> <span class="n">DEFAULT_DIMENSION_ORDER</span><span class="p">,</span> <span class="n">DimensionNames</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">bioio_base.reader</span><span class="w"> </span><span class="kn">import</span> <span class="n">Reader</span>
@@ -252,7 +253,6 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">bioio_ome_zarr.writers.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">multiscale_chunk_size_from_memory_target</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">zarr.codecs</span><span class="w"> </span><span class="kn">import</span> <span class="n">BloscCodec</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">..cluster</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cluster</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">..sharding</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">DEFAULT_CHUNK_LIMIT_BYTES</span><span class="p">,</span>
     <span class="n">DEFAULT_SHARD_LIMIT_BYTES</span><span class="p">,</span>
@@ -262,6 +262,21 @@
 
 <span class="c1"># Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.</span>
 <span class="n">_Bounds</span> <span class="o">=</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_available_cores</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of cores the current process may actually run on.</span>
+
+<span class="sd">    Prefer the process&#39;s CPU affinity, which reflects the cores granted by a</span>
+<span class="sd">    cgroup/cpuset (e.g. a SLURM ``--cpus-per-task`` allocation) rather than the</span>
+<span class="sd">    node&#39;s total hardware. ``cpu_affinity`` is unavailable on platforms without</span>
+<span class="sd">    an affinity API (notably macOS), where it raises ``AttributeError``; there</span>
+<span class="sd">    we fall back to the physical core count.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">psutil</span><span class="o">.</span><span class="n">Process</span><span class="p">()</span><span class="o">.</span><span class="n">cpu_affinity</span><span class="p">()))</span>
+    <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">psutil</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">(</span><span class="n">logical</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">1</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_write_shard_process</span><span class="p">(</span>
@@ -307,7 +322,7 @@
 
 
 <div class="viewcode-block" id="OmeZarrConverter">
-<a class="viewcode-back" href="../../../generated/bioio_conversion.converters.OmeZarrConverter.html#bioio_conversion.converters.ome_zarr_converter.OmeZarrConverter">[docs]</a>
+<a class="viewcode-back" href="../../../generated/bioio_conversion.converters.OmeZarrConverter.html#bioio_conversion.OmeZarrConverter">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">OmeZarrConverter</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    OmeZarrConverter handles conversion of any BioImage‐supported format</span>
@@ -316,7 +331,7 @@
 <span class="sd">    &quot;&quot;&quot;</span>
 
 <div class="viewcode-block" id="OmeZarrConverter.__init__">
-<a class="viewcode-back" href="../../../generated/bioio_conversion.converters.OmeZarrConverter.html#bioio_conversion.converters.ome_zarr_converter.OmeZarrConverter.__init__">[docs]</a>
+<a class="viewcode-back" href="../../../generated/bioio_conversion.converters.OmeZarrConverter.html#bioio_conversion.OmeZarrConverter.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
@@ -345,8 +360,7 @@
         <span class="n">start_t_dest</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">tbatch</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">auto_dask_cluster</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="n">n_workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">n_workers</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">shard_limit_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_SHARD_LIMIT_BYTES</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -438,23 +452,17 @@
 <span class="sd">            as available in both source and destination.</span>
 <span class="sd">        dtype : Optional[Union[str, np.dtype]]</span>
 <span class="sd">            Override output data type; defaults to the reader’s dtype.</span>
-<span class="sd">        auto_dask_cluster : bool</span>
-<span class="sd">            If True, automatically spin up a local Dask cluster with</span>
-<span class="sd">            8 workers (using `Cluster(n_workers=8).start()`) before any</span>
-<span class="sd">            conversion.</span>
-<span class="sd">        n_workers : int</span>
+<span class="sd">        n_workers : Optional[int]</span>
 <span class="sd">            Number of worker *processes* for shard writes (auto-layout path).</span>
+<span class="sd">            If ``None`` (default), derived from the cores actually available to</span>
+<span class="sd">            the process. One process per core,</span>
+<span class="sd">            floored at 1.</span>
 <span class="sd">        shard_limit_bytes : int</span>
 <span class="sd">            Maximum uncompressed size of a level-0 shard. Default: 4 GiB.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">source</span> <span class="o">=</span> <span class="n">source</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">destination</span> <span class="o">=</span> <span class="n">destination</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="o">.</span><span class="n">cwd</span><span class="p">())</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">output_basename</span> <span class="o">=</span> <span class="n">name</span> <span class="ow">or</span> <span class="n">Path</span><span class="p">(</span><span class="n">source</span><span class="p">)</span><span class="o">.</span><span class="n">stem</span>
-
-        <span class="c1"># Optional local Dask cluster</span>
-        <span class="k">if</span> <span class="n">auto_dask_cluster</span><span class="p">:</span>
-            <span class="n">cluster</span> <span class="o">=</span> <span class="n">Cluster</span><span class="p">(</span><span class="n">n_workers</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
-            <span class="n">cluster</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span> <span class="o">=</span> <span class="n">BioImage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">source</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">scene_names</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="o">.</span><span class="n">scenes</span>
@@ -499,7 +507,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_src</span> <span class="o">=</span> <span class="n">start_t_src</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_start_t_dest</span> <span class="o">=</span> <span class="n">start_t_dest</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tbatch</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">tbatch</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">tbatch</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_n_workers</span> <span class="o">=</span> <span class="n">n_workers</span>
+        <span class="c1"># Default to one process per available core (shard writes are GIL-bound</span>
+        <span class="c1"># CPU work). _available_cores honors a cgroup/SLURM allocation so we do</span>
+        <span class="c1"># not oversubscribe a partial node; it is floored at 1.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_n_workers</span> <span class="o">=</span> <span class="n">n_workers</span> <span class="ow">or</span> <span class="n">_available_cores</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_shard_limit_bytes</span> <span class="o">=</span> <span class="n">shard_limit_bytes</span></div>
 
 
@@ -629,7 +640,7 @@
     <span class="c1"># -------------------------------------------------------------------------</span>
 
 <div class="viewcode-block" id="OmeZarrConverter.convert">
-<a class="viewcode-back" href="../../../bioio_conversion.converters.html#bioio_conversion.converters.ome_zarr_converter.OmeZarrConverter.convert">[docs]</a>
+<a class="viewcode-back" href="../../../bioio_conversion.converters.html#bioio_conversion.OmeZarrConverter.convert">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">convert</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">scene_indices</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
             <span class="n">bad</span> <span class="o">=</span> <span class="p">[</span>

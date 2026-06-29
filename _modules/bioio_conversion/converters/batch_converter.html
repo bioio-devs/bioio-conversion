@@ -245,7 +245,7 @@
 
 
 <div class="viewcode-block" id="BatchConverter">
-<a class="viewcode-back" href="../../../generated/bioio_conversion.converters.BatchConverter.html#bioio_conversion.converters.batch_converter.BatchConverter">[docs]</a>
+<a class="viewcode-back" href="../../../generated/bioio_conversion.converters.BatchConverter.html#bioio_conversion.BatchConverter">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">BatchConverter</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    BatchConverter orchestrates bulk conversions of image files using</span>
@@ -265,7 +265,7 @@
     <span class="p">}</span>
 
 <div class="viewcode-block" id="BatchConverter.__init__">
-<a class="viewcode-back" href="../../../generated/bioio_conversion.converters.BatchConverter.html#bioio_conversion.converters.batch_converter.BatchConverter.__init__">[docs]</a>
+<a class="viewcode-back" href="../../../generated/bioio_conversion.converters.BatchConverter.html#bioio_conversion.BatchConverter.__init__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
@@ -289,7 +289,7 @@
 
 
 <div class="viewcode-block" id="BatchConverter.from_csv">
-<a class="viewcode-back" href="../../../bioio_conversion.converters.html#bioio_conversion.converters.batch_converter.BatchConverter.from_csv">[docs]</a>
+<a class="viewcode-back" href="../../../bioio_conversion.converters.html#bioio_conversion.BatchConverter.from_csv">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">from_csv</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">csv_path</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Parse a CSV file into a list of job option dicts.</span>
@@ -314,7 +314,7 @@
 
 
 <div class="viewcode-block" id="BatchConverter.from_directory">
-<a class="viewcode-back" href="../../../bioio_conversion.converters.html#bioio_conversion.converters.batch_converter.BatchConverter.from_directory">[docs]</a>
+<a class="viewcode-back" href="../../../bioio_conversion.converters.html#bioio_conversion.BatchConverter.from_directory">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">from_directory</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">directory</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">],</span>
@@ -346,7 +346,7 @@
 
 
 <div class="viewcode-block" id="BatchConverter.from_list">
-<a class="viewcode-back" href="../../../bioio_conversion.converters.html#bioio_conversion.converters.batch_converter.BatchConverter.from_list">[docs]</a>
+<a class="viewcode-back" href="../../../bioio_conversion.converters.html#bioio_conversion.BatchConverter.from_list">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">from_list</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">paths</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">]],</span>
@@ -365,7 +365,7 @@
 
 
 <div class="viewcode-block" id="BatchConverter.run_jobs">
-<a class="viewcode-back" href="../../../bioio_conversion.converters.html#bioio_conversion.converters.batch_converter.BatchConverter.run_jobs">[docs]</a>
+<a class="viewcode-back" href="../../../bioio_conversion.converters.html#bioio_conversion.BatchConverter.run_jobs">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">run_jobs</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">jobs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
