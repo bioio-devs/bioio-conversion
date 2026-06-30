@@ -162,8 +162,8 @@ class OmeZarrConverter:
             Compression codec. For v2 use ``numcodecs.Blosc``; for v3 use
             ``zarr.codecs.BloscCodec``.
         zarr_format : Optional[int]
-            Target Zarr array format (``2`` or ``3``). ``None`` lets the writer
-            choose its default.
+            Target Zarr array format (``2`` or ``3``). Defaults to ``3`` when
+            ``None``.
         image_name : Optional[str]
             Image name to record in multiscales metadata. Defaults to the output base.
         channels : Optional[List[Channel]]
