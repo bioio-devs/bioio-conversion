@@ -26,6 +26,8 @@ from ..sharding import (
 # Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.
 _Bounds = Tuple[Tuple[int, int], ...]
 
+DEFAULT_ZARR_FORMAT = 3
+
 
 def _available_cores() -> int:
     """Number of cores the current process may actually run on.
@@ -160,8 +162,8 @@ class OmeZarrConverter:
             Compression codec. For v2 use ``numcodecs.Blosc``; for v3 use
             ``zarr.codecs.BloscCodec``.
         zarr_format : Optional[int]
-            Target Zarr array format (``2`` or ``3``). ``None`` lets the writer
-            choose its default.
+            Target Zarr array format (``2`` or ``3``). Defaults to ``3`` when
+            ``None``.
         image_name : Optional[str]
             Image name to record in multiscales metadata. Defaults to the output base.
         channels : Optional[List[Channel]]
@@ -244,7 +246,9 @@ class OmeZarrConverter:
         self._writer_chunk_shape = chunk_shape
         self._writer_shard_shape = shard_shape
         self._writer_compressor = compressor
-        self._writer_zarr_format = zarr_format
+        self._writer_zarr_format = (
+            DEFAULT_ZARR_FORMAT if zarr_format is None else zarr_format
+        )
         self._writer_image_name = image_name
         self._writer_channels = channels
         self._writer_rdefs = rdefs
