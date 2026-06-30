@@ -26,6 +26,11 @@ from ..sharding import (
 # Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.
 _Bounds = Tuple[Tuple[int, int], ...]
 
+# Format used when the caller doesn't specify one. The v3 auto-pyramid /
+# auto-shard paths are gated on v3, so defaulting here ensures a plain
+# ``bioio-convert`` (no ``--zarr-format``) still produces a full pyramid.
+DEFAULT_ZARR_FORMAT = 3
+
 
 def _available_cores() -> int:
     """Number of cores the current process may actually run on.
@@ -244,7 +249,9 @@ class OmeZarrConverter:
         self._writer_chunk_shape = chunk_shape
         self._writer_shard_shape = shard_shape
         self._writer_compressor = compressor
-        self._writer_zarr_format = zarr_format
+        self._writer_zarr_format = (
+            DEFAULT_ZARR_FORMAT if zarr_format is None else zarr_format
+        )
         self._writer_image_name = image_name
         self._writer_channels = channels
         self._writer_rdefs = rdefs
