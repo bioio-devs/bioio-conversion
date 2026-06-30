@@ -26,9 +26,6 @@ from ..sharding import (
 # Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.
 _Bounds = Tuple[Tuple[int, int], ...]
 
-# Format used when the caller doesn't specify one. The v3 auto-pyramid /
-# auto-shard paths are gated on v3, so defaulting here ensures a plain
-# ``bioio-convert`` (no ``--zarr-format``) still produces a full pyramid.
 DEFAULT_ZARR_FORMAT = 3
 
 
