@@ -263,6 +263,8 @@
 <span class="c1"># Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.</span>
 <span class="n">_Bounds</span> <span class="o">=</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span>
 
+<span class="n">DEFAULT_ZARR_FORMAT</span> <span class="o">=</span> <span class="mi">3</span>
+
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_available_cores</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of cores the current process may actually run on.</span>
@@ -401,8 +403,8 @@
 <span class="sd">            Compression codec. For v2 use ``numcodecs.Blosc``; for v3 use</span>
 <span class="sd">            ``zarr.codecs.BloscCodec``.</span>
 <span class="sd">        zarr_format : Optional[int]</span>
-<span class="sd">            Target Zarr array format (``2`` or ``3``). ``None`` lets the writer</span>
-<span class="sd">            choose its default.</span>
+<span class="sd">            Target Zarr array format (``2`` or ``3``). Defaults to ``3`` when</span>
+<span class="sd">            ``None``.</span>
 <span class="sd">        image_name : Optional[str]</span>
 <span class="sd">            Image name to record in multiscales metadata. Defaults to the output base.</span>
 <span class="sd">        channels : Optional[List[Channel]]</span>
@@ -485,7 +487,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_writer_chunk_shape</span> <span class="o">=</span> <span class="n">chunk_shape</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_writer_shard_shape</span> <span class="o">=</span> <span class="n">shard_shape</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_writer_compressor</span> <span class="o">=</span> <span class="n">compressor</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_writer_zarr_format</span> <span class="o">=</span> <span class="n">zarr_format</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_writer_zarr_format</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">DEFAULT_ZARR_FORMAT</span> <span class="k">if</span> <span class="n">zarr_format</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">zarr_format</span>
+        <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_writer_image_name</span> <span class="o">=</span> <span class="n">image_name</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_writer_channels</span> <span class="o">=</span> <span class="n">channels</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_writer_rdefs</span> <span class="o">=</span> <span class="n">rdefs</span>

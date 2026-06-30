@@ -288,8 +288,8 @@ v3 auto-shard calculation.</p>
 <dt><strong>compressor</strong><span class="classifier">Optional[Union[zarr.codecs.BloscCodec, numcodecs.abc.Codec]]</span></dt><dd><p>Compression codec. For v2 use <code class="docutils literal notranslate"><span class="pre">numcodecs.Blosc</span></code>; for v3 use
 <code class="docutils literal notranslate"><span class="pre">zarr.codecs.BloscCodec</span></code>.</p>
 </dd>
-<dt><strong>zarr_format</strong><span class="classifier">Optional[int]</span></dt><dd><p>Target Zarr array format (<code class="docutils literal notranslate"><span class="pre">2</span></code> or <code class="docutils literal notranslate"><span class="pre">3</span></code>). <code class="docutils literal notranslate"><span class="pre">None</span></code> lets the writer
-choose its default.</p>
+<dt><strong>zarr_format</strong><span class="classifier">Optional[int]</span></dt><dd><p>Target Zarr array format (<code class="docutils literal notranslate"><span class="pre">2</span></code> or <code class="docutils literal notranslate"><span class="pre">3</span></code>). Defaults to <code class="docutils literal notranslate"><span class="pre">3</span></code> when
+<code class="docutils literal notranslate"><span class="pre">None</span></code>.</p>
 </dd>
 <dt><strong>image_name</strong><span class="classifier">Optional[str]</span></dt><dd><p>Image name to record in multiscales metadata. Defaults to the output base.</p>
 </dd>
