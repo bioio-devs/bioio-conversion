@@ -283,22 +283,15 @@ class OmeZarrConverter:
     def _infer_physical_pixel_sizes(
         self, axis_names: List[str]
     ) -> Optional[List[float]]:
-        """Per-axis level-0 scale for the writer, one value per present axis.
+        """Per-axis level-0 scale for the writer.
 
         Spatial axes (Z, Y, X) come from ``BioImage.scale`` (physical pixel
         sizes). The time axis (T) is the acquisition **time interval** in
-        seconds, which the reader surfaces via ``BioImage.time_interval`` and
-        which ``scale.T`` exposes (``time_interval.total_seconds()``); this is
-        how a file-sourced frame interval reaches the OME-Zarr T coordinate
-        scale. An explicit ``physical_pixel_size`` override wins outright. Any
-        axis the file does not provide falls back to ``1.0`` so the writer
-        always has a concrete scale per axis.
+        seconds.
         """
         if self._writer_physical_pixel_size is not None:
             return [float(x) for x in self._writer_physical_pixel_size]
 
-        # From BioImage.scale; include only present axes. scale.T carries the
-        # acquisition time interval (seconds) derived from time_interval.
         scale_info = self.bioimage.scale
         defaults = {"t": 1.0, "z": 1.0, "y": 1.0, "x": 1.0, "c": 1.0}
         mapping = {
