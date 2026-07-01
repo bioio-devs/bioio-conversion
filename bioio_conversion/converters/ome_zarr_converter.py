@@ -300,6 +300,36 @@ class OmeZarrConverter:
             float(mapping.get(ax, defaults[ax]) or defaults[ax]) for ax in axis_names
         ]
 
+    def _infer_axes_units(self, axis_names: List[str]) -> Optional[List[Optional[str]]]:
+        # Prefer an explicit, user-supplied override.
+        if self._writer_axes_units is not None:
+            return self._writer_axes_units
+
+        # Otherwise read real, file-sourced units from the consistent
+        # BioImage.dimension_properties surface. Readers that don't attach
+        # units leave them as None, in which case we omit axes_units entirely.
+        dim_props = getattr(self.bioimage, "dimension_properties", None)
+        if dim_props is None:
+            return None
+
+        mapping = {
+            "t": getattr(dim_props, "T", None),
+            "c": getattr(dim_props, "C", None),
+            "z": getattr(dim_props, "Z", None),
+            "y": getattr(dim_props, "Y", None),
+            "x": getattr(dim_props, "X", None),
+        }
+        units: List[Optional[str]] = []
+        for ax in axis_names:
+            prop = mapping.get(ax)
+            unit = getattr(prop, "unit", None) if prop is not None else None
+            units.append(str(unit) if unit is not None else None)
+
+        # Nothing to convey → let the writer omit units.
+        if all(unit is None for unit in units):
+            return None
+        return units
+
     def _resolve_channels(
         self, axis_names: List[str], channel_count: int
     ) -> Optional[List[Channel]]:
@@ -536,7 +566,7 @@ class OmeZarrConverter:
                         "root_transform": self._writer_root_transform,
                         "axes_names": (self._writer_axes_names or axis_names),
                         "axes_types": self._writer_axes_types,
-                        "axes_units": self._writer_axes_units,
+                        "axes_units": self._infer_axes_units(axis_names),
                         "physical_pixel_size": pps,
                     }.items()
                     if v is not None
