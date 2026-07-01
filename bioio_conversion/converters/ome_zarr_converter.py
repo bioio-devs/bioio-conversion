@@ -301,13 +301,11 @@ class OmeZarrConverter:
         ]
 
     def _infer_axes_units(self, axis_names: List[str]) -> Optional[List[Optional[str]]]:
-        # Prefer an explicit, user-supplied override.
+        # Override.
         if self._writer_axes_units is not None:
             return self._writer_axes_units
 
-        # Otherwise read real, file-sourced units from the consistent
-        # BioImage.dimension_properties surface. Readers that don't attach
-        # units leave them as None, in which case we omit axes_units entirely.
+        # Otherwise fetch from BioImage
         dim_props = getattr(self.bioimage, "dimension_properties", None)
         if dim_props is None:
             return None
@@ -325,7 +323,7 @@ class OmeZarrConverter:
             unit = getattr(prop, "unit", None) if prop is not None else None
             units.append(str(unit) if unit is not None else None)
 
-        # Nothing to convey → let the writer omit units.
+        # Fallback = None
         if all(unit is None for unit in units):
             return None
         return units
