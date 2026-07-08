@@ -283,10 +283,15 @@ class OmeZarrConverter:
     def _infer_physical_pixel_sizes(
         self, axis_names: List[str]
     ) -> Optional[List[float]]:
+        """Per-axis level-0 scale for the writer.
+
+        Spatial axes (Z, Y, X) come from ``BioImage.scale`` (physical pixel
+        sizes). The time axis (T) is the acquisition **time interval** in
+        seconds.
+        """
         if self._writer_physical_pixel_size is not None:
             return [float(x) for x in self._writer_physical_pixel_size]
 
-        # From BioImage.scale; include only present axes
         scale_info = self.bioimage.scale
         defaults = {"t": 1.0, "z": 1.0, "y": 1.0, "x": 1.0, "c": 1.0}
         mapping = {
@@ -299,6 +304,34 @@ class OmeZarrConverter:
         return [
             float(mapping.get(ax, defaults[ax]) or defaults[ax]) for ax in axis_names
         ]
+
+    def _infer_axes_units(self, axis_names: List[str]) -> Optional[List[Optional[str]]]:
+        # Override.
+        if self._writer_axes_units is not None:
+            return self._writer_axes_units
+
+        # Otherwise fetch from BioImage
+        dim_props = getattr(self.bioimage, "dimension_properties", None)
+        if dim_props is None:
+            return None
+
+        mapping = {
+            "t": getattr(dim_props, "T", None),
+            "c": getattr(dim_props, "C", None),
+            "z": getattr(dim_props, "Z", None),
+            "y": getattr(dim_props, "Y", None),
+            "x": getattr(dim_props, "X", None),
+        }
+        units: List[Optional[str]] = []
+        for ax in axis_names:
+            prop = mapping.get(ax)
+            unit = getattr(prop, "unit", None) if prop is not None else None
+            units.append(str(unit) if unit is not None else None)
+
+        # Fallback = None
+        if all(unit is None for unit in units):
+            return None
+        return units
 
     def _resolve_channels(
         self, axis_names: List[str], channel_count: int
@@ -536,7 +569,7 @@ class OmeZarrConverter:
                         "root_transform": self._writer_root_transform,
                         "axes_names": (self._writer_axes_names or axis_names),
                         "axes_types": self._writer_axes_types,
-                        "axes_units": self._writer_axes_units,
+                        "axes_units": self._infer_axes_units(axis_names),
                         "physical_pixel_size": pps,
                     }.items()
                     if v is not None
