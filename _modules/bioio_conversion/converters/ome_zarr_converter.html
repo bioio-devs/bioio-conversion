@@ -525,10 +525,15 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_infer_physical_pixel_sizes</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">axis_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Per-axis level-0 scale for the writer.</span>
+
+<span class="sd">        Spatial axes (Z, Y, X) come from ``BioImage.scale`` (physical pixel</span>
+<span class="sd">        sizes). The time axis (T) is the acquisition **time interval** in</span>
+<span class="sd">        seconds.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_physical_pixel_size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_physical_pixel_size</span><span class="p">]</span>
 
-        <span class="c1"># From BioImage.scale; include only present axes</span>
         <span class="n">scale_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="o">.</span><span class="n">scale</span>
         <span class="n">defaults</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;t&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;z&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;y&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;c&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">}</span>
         <span class="n">mapping</span> <span class="o">=</span> <span class="p">{</span>
@@ -541,6 +546,34 @@
         <span class="k">return</span> <span class="p">[</span>
             <span class="nb">float</span><span class="p">(</span><span class="n">mapping</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">defaults</span><span class="p">[</span><span class="n">ax</span><span class="p">])</span> <span class="ow">or</span> <span class="n">defaults</span><span class="p">[</span><span class="n">ax</span><span class="p">])</span> <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">axis_names</span>
         <span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_infer_axes_units</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]:</span>
+        <span class="c1"># Override.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_axes_units</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_axes_units</span>
+
+        <span class="c1"># Otherwise fetch from BioImage</span>
+        <span class="n">dim_props</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="p">,</span> <span class="s2">&quot;dimension_properties&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dim_props</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">mapping</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;t&quot;</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dim_props</span><span class="p">,</span> <span class="s2">&quot;T&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="s2">&quot;c&quot;</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dim_props</span><span class="p">,</span> <span class="s2">&quot;C&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="s2">&quot;z&quot;</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dim_props</span><span class="p">,</span> <span class="s2">&quot;Z&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="s2">&quot;y&quot;</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dim_props</span><span class="p">,</span> <span class="s2">&quot;Y&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+            <span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">dim_props</span><span class="p">,</span> <span class="s2">&quot;X&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="p">}</span>
+        <span class="n">units</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">axis_names</span><span class="p">:</span>
+            <span class="n">prop</span> <span class="o">=</span> <span class="n">mapping</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ax</span><span class="p">)</span>
+            <span class="n">unit</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">prop</span><span class="p">,</span> <span class="s2">&quot;unit&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">prop</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="n">units</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">unit</span><span class="p">)</span> <span class="k">if</span> <span class="n">unit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+
+        <span class="c1"># Fallback = None</span>
+        <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">unit</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">unit</span> <span class="ow">in</span> <span class="n">units</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">units</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_channels</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">axis_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">channel_count</span><span class="p">:</span> <span class="nb">int</span>
@@ -780,7 +813,7 @@
                         <span class="s2">&quot;root_transform&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_root_transform</span><span class="p">,</span>
                         <span class="s2">&quot;axes_names&quot;</span><span class="p">:</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_writer_axes_names</span> <span class="ow">or</span> <span class="n">axis_names</span><span class="p">),</span>
                         <span class="s2">&quot;axes_types&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_axes_types</span><span class="p">,</span>
-                        <span class="s2">&quot;axes_units&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_axes_units</span><span class="p">,</span>
+                        <span class="s2">&quot;axes_units&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_axes_units</span><span class="p">(</span><span class="n">axis_names</span><span class="p">),</span>
                         <span class="s2">&quot;physical_pixel_size&quot;</span><span class="p">:</span> <span class="n">pps</span><span class="p">,</span>
                     <span class="p">}</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
                     <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
