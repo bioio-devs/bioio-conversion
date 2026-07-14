@@ -451,166 +451,225 @@ class OmeZarrConverter:
                     UserWarning,
                 )
 
-        bio = self.bioimage
-        for scene_index in self.scene_indices:
-            # (1) Discover native axes/shape from the active reader
-            axis_names, level0_shape = self._native_axes_and_shape_for_scene(
-                scene_index
-            )
+        # Resolve every output path up front and fail fast if any already
+        # exists. Writes now stream into a pool that spans all scenes, so a late
+        # FileExistsError would otherwise surface only after earlier scenes'
+        # shards were already being written.
+        out_paths = {
+            idx: Path(self.destination) / f"{self._output_base_for_scene(idx)}.ome.zarr"
+            for idx in self.scene_indices
+        }
+        for path in out_paths.values():
+            if path.exists():
+                raise FileExistsError(f"{path} already exists.")
 
-            # (2) Channels
-            r = bio.reader
-            ccount = int(getattr(r.dims, "C", 1)) if "c" in axis_names else 0
-            channel_models = self._resolve_channels(axis_names, ccount)
-            pps = self._infer_physical_pixel_sizes(axis_names)
-
-            dims = "".join(ax.upper() for ax in axis_names)
-
-            # True when dims are a subset of TCZYX with Y and X present.
-            ome_dims = (
-                {
-                    DimensionNames.SpatialY,
-                    DimensionNames.SpatialX,
-                }
-                <= set(dims)
-                <= set(DEFAULT_DIMENSION_ORDER)
-            )
-
-            # (3) Scale to writer
-            if self._writer_level_shapes is not None:
-                writer_level_shapes_param: MultiResolutionShapeSpec = (
-                    self._writer_level_shapes
+        # A single process pool spans *all* scenes so that when a scene has fewer
+        # shards than workers, the otherwise-idle cores immediately pick up the
+        # next scene's shards rather than standing idle until the scene finishes.
+        # Store creation (writer.initialize) is cheap metadata, so the parent
+        # stays ahead of the workers and keeps the queue full. Workers are
+        # processes because shard writes (downsample + Blosc + shard assembly)
+        # are GIL-bound; n_workers == 1 keeps the serial in-process path.
+        pool = (
+            ProcessPoolExecutor(max_workers=self._n_workers)
+            if self._n_workers > 1
+            else None
+        )
+        futures: List[Any] = []
+        try:
+            for scene_index in self.scene_indices:
+                self._plan_and_dispatch_scene(
+                    scene_index, out_paths[scene_index], pool, futures
                 )
-            elif (
-                self._writer_zarr_format == 3
-                and self._helper_num_levels is None
-                and ome_dims
-            ):
-                # v3 default: auto-generate pyramid levels down to atlas fit.
-                writer_level_shapes_param = build_pyramid_shapes(level0_shape, dims)
-            else:
-                derived = self._build_level_shapes_simple(axis_names, level0_shape)
-                writer_level_shapes_param = (
-                    derived if derived is not None else tuple(level0_shape)
-                )
+            for future in futures:
+                future.result()  # surface any worker exception
+        finally:
+            if pool is not None:
+                pool.shutdown()
 
-            # (4) Chunking + sharding
-            writer_shard_shape_param = self._writer_shard_shape
+    def _output_base_for_scene(self, scene_index: int) -> str:
+        """Sanitized output basename (no extension) for a scene's store.
 
-            can_auto_layout = (
-                self._writer_zarr_format == 3
-                and self._writer_chunk_shape is None
-                and self._writer_shard_shape is None
-                and ome_dims
-            )
+        Single-scene conversions use the base name as-is; multi-scene runs
+        suffix each store with the scene name. Characters illegal in filenames
+        are replaced with ``_``.
+        """
+        scene_name = self.scene_names[scene_index]
+        base = (
+            self.output_basename
+            if len(self.scene_indices) == 1
+            else f"{self.output_basename}_{scene_name}"
+        )
+        return re.sub(r"[<>:\"/\\|?*]", "_", base)
 
-            if self._writer_chunk_shape is not None:
-                writer_chunk_shape_param: Optional[
-                    MultiResolutionShapeSpec
-                ] = self._writer_chunk_shape
-            elif can_auto_layout:
-                chunk_limit = (
-                    self._helper_memory_target_bytes or DEFAULT_CHUNK_LIMIT_BYTES
-                )
-                level_shapes_list = self._ensure_per_level_shapes(
-                    writer_level_shapes_param
-                )
-                auto_chunks, auto_shards = choose_pyramid_layout(
-                    level_shapes=level_shapes_list,
-                    dtype=self.output_dtype,
-                    dims=dims,
-                    chunk_limit_bytes=chunk_limit,
-                    shard_limit_bytes=self._shard_limit_bytes,
-                )
-                writer_chunk_shape_param = auto_chunks
-                writer_shard_shape_param = auto_shards
-            elif self._helper_memory_target_bytes is not None:
-                # Normalize level shapes to per-level list for the helper
-                level_shapes_list = self._ensure_per_level_shapes(
-                    writer_level_shapes_param
-                )
-                suggested = multiscale_chunk_size_from_memory_target(
-                    level_shapes_list,
-                    self.output_dtype,
-                    self._helper_memory_target_bytes,
-                )
-                writer_chunk_shape_param = [tuple(map(int, s)) for s in suggested]
-            else:
-                writer_chunk_shape_param = None  # writer suggests per-level ~16 MiB
-
-            # (5) Output path
-            scene_name = self.scene_names[scene_index]
-            base = (
-                self.output_basename
-                if len(self.scene_indices) == 1
-                else f"{self.output_basename}_{scene_name}"
-            )
-            base = re.sub(r"[<>:\"/\\|?*]", "_", base)
-            out_path = Path(self.destination) / f"{base}.ome.zarr"
-            if out_path.exists():
-                raise FileExistsError(f"{out_path} already exists.")
-
-            # (6) Build writer kwargs
-            writer_kwargs: Dict[str, Any] = {
-                "store": str(out_path),
-                "level_shapes": writer_level_shapes_param,
-                "dtype": self.output_dtype,
-                **{
-                    k: v
-                    for k, v in {
-                        "chunk_shape": writer_chunk_shape_param,
-                        "shard_shape": writer_shard_shape_param,
-                        "compressor": self._writer_compressor,
-                        "zarr_format": self._writer_zarr_format,
-                        "image_name": (self._writer_image_name or base),
-                        "channels": channel_models,
-                        "rdefs": self._writer_rdefs,
-                        "creator_info": self._writer_creator_info,
-                        "root_transform": self._writer_root_transform,
-                        "axes_names": (self._writer_axes_names or axis_names),
-                        "axes_types": self._writer_axes_types,
-                        "axes_units": self._infer_axes_units(axis_names),
-                        "physical_pixel_size": pps,
-                    }.items()
-                    if v is not None
-                },
-            }
-
-            writer = OMEZarrWriter(**writer_kwargs)
-
-            # (7) Read pixels directly from the reader in its native (unpadded) order
-            bio.set_scene(scene_index)
-            r = bio.reader
-            native_order = r.dims.order.upper()
-
-            # (8) Write — shard-aligned region writes via write_region.
-            # Every call covers exactly one shard boundary at every pyramid level
-            # so no shard is ever read back to be merged (no read-modify-write).
-            writer.initialize()
-
-            if can_auto_layout:
-                self._write_auto_layout_shards(
-                    out_path, native_order, scene_index, auto_shards, level0_shape
-                )
-            else:
-                t_ax = dims.index("T") if "t" in axis_names else None
-                self._write_fallback(writer, r, native_order, t_ax, level0_shape)
-
-    def _write_auto_layout_shards(
+    def _plan_and_dispatch_scene(
         self,
-        out_path: Path,
-        native_order: str,
         scene_index: int,
+        out_path: Path,
+        pool: Optional[ProcessPoolExecutor],
+        futures: List[Any],
+    ) -> None:
+        """Build one scene's store, initialize it, and dispatch its writes.
+
+        Auto-layout shard writes are submitted to the shared ``pool`` (one task
+        per shard) so they interleave with other scenes' shards and keep every
+        core busy; when ``pool`` is ``None`` (single worker) they run in-process.
+        Non-auto-layout stores fall back to a single-threaded write in the parent
+        process.
+        """
+        bio = self.bioimage
+        base = self._output_base_for_scene(scene_index)
+
+        # (1) Discover native axes/shape from the active reader
+        axis_names, level0_shape = self._native_axes_and_shape_for_scene(scene_index)
+
+        # (2) Channels
+        r = bio.reader
+        ccount = int(getattr(r.dims, "C", 1)) if "c" in axis_names else 0
+        channel_models = self._resolve_channels(axis_names, ccount)
+        pps = self._infer_physical_pixel_sizes(axis_names)
+
+        dims = "".join(ax.upper() for ax in axis_names)
+
+        # True when dims are a subset of TCZYX with Y and X present.
+        ome_dims = (
+            {
+                DimensionNames.SpatialY,
+                DimensionNames.SpatialX,
+            }
+            <= set(dims)
+            <= set(DEFAULT_DIMENSION_ORDER)
+        )
+
+        # (3) Scale to writer
+        if self._writer_level_shapes is not None:
+            writer_level_shapes_param: MultiResolutionShapeSpec = (
+                self._writer_level_shapes
+            )
+        elif (
+            self._writer_zarr_format == 3
+            and self._helper_num_levels is None
+            and ome_dims
+        ):
+            # v3 default: auto-generate pyramid levels down to atlas fit.
+            writer_level_shapes_param = build_pyramid_shapes(level0_shape, dims)
+        else:
+            derived = self._build_level_shapes_simple(axis_names, level0_shape)
+            writer_level_shapes_param = (
+                derived if derived is not None else tuple(level0_shape)
+            )
+
+        # (4) Chunking + sharding
+        writer_shard_shape_param = self._writer_shard_shape
+
+        can_auto_layout = (
+            self._writer_zarr_format == 3
+            and self._writer_chunk_shape is None
+            and self._writer_shard_shape is None
+            and ome_dims
+        )
+
+        if self._writer_chunk_shape is not None:
+            writer_chunk_shape_param: Optional[
+                MultiResolutionShapeSpec
+            ] = self._writer_chunk_shape
+        elif can_auto_layout:
+            chunk_limit = self._helper_memory_target_bytes or DEFAULT_CHUNK_LIMIT_BYTES
+            level_shapes_list = self._ensure_per_level_shapes(writer_level_shapes_param)
+            auto_chunks, auto_shards = choose_pyramid_layout(
+                level_shapes=level_shapes_list,
+                dtype=self.output_dtype,
+                dims=dims,
+                chunk_limit_bytes=chunk_limit,
+                shard_limit_bytes=self._shard_limit_bytes,
+            )
+            writer_chunk_shape_param = auto_chunks
+            writer_shard_shape_param = auto_shards
+        elif self._helper_memory_target_bytes is not None:
+            # Normalize level shapes to per-level list for the helper
+            level_shapes_list = self._ensure_per_level_shapes(writer_level_shapes_param)
+            suggested = multiscale_chunk_size_from_memory_target(
+                level_shapes_list,
+                self.output_dtype,
+                self._helper_memory_target_bytes,
+            )
+            writer_chunk_shape_param = [tuple(map(int, s)) for s in suggested]
+        else:
+            writer_chunk_shape_param = None  # writer suggests per-level ~16 MiB
+
+        # (5) Build writer kwargs
+        writer_kwargs: Dict[str, Any] = {
+            "store": str(out_path),
+            "level_shapes": writer_level_shapes_param,
+            "dtype": self.output_dtype,
+            **{
+                k: v
+                for k, v in {
+                    "chunk_shape": writer_chunk_shape_param,
+                    "shard_shape": writer_shard_shape_param,
+                    "compressor": self._writer_compressor,
+                    "zarr_format": self._writer_zarr_format,
+                    "image_name": (self._writer_image_name or base),
+                    "channels": channel_models,
+                    "rdefs": self._writer_rdefs,
+                    "creator_info": self._writer_creator_info,
+                    "root_transform": self._writer_root_transform,
+                    "axes_names": (self._writer_axes_names or axis_names),
+                    "axes_types": self._writer_axes_types,
+                    "axes_units": self._infer_axes_units(axis_names),
+                    "physical_pixel_size": pps,
+                }.items()
+                if v is not None
+            },
+        }
+
+        writer = OMEZarrWriter(**writer_kwargs)
+
+        # (6) Read pixels directly from the reader in its native (unpadded) order
+        bio.set_scene(scene_index)
+        r = bio.reader
+        native_order = r.dims.order.upper()
+
+        # (7) Write — shard-aligned region writes via write_region. Every call
+        # covers exactly one shard boundary at every pyramid level so no shard is
+        # ever read back to be merged (no read-modify-write).
+        writer.initialize()
+
+        if can_auto_layout:
+            out_dtype_str = str(self.output_dtype)
+            for src_bounds, dest_bounds in self._scene_shard_bounds(
+                auto_shards, level0_shape
+            ):
+                task = (
+                    self.source,
+                    str(out_path),
+                    native_order,
+                    scene_index,
+                    out_dtype_str,
+                    src_bounds,
+                    dest_bounds,
+                )
+                if pool is not None:
+                    futures.append(pool.submit(_write_shard_process, *task))
+                else:
+                    _write_shard_process(*task)
+        else:
+            t_ax = dims.index("T") if "t" in axis_names else None
+            self._write_fallback(writer, r, native_order, t_ax, level0_shape)
+
+    def _scene_shard_bounds(
+        self,
         auto_shards: MultiResolutionShapeSpec,
         level0_shape: Tuple[int, ...],
-    ) -> None:
-        """Write each disjoint level-0 shard via its own ``write_region`` call.
+    ) -> List[Tuple[_Bounds, _Bounds]]:
+        """Enumerate a scene's disjoint level-0 shard regions.
 
-        Every shard covers exactly one shard boundary at every pyramid level, so
-        no shard is ever read back to be merged. The write phase is GIL-bound, so
-        when ``n_workers > 1`` the shards are dispatched to a
-        ``ProcessPoolExecutor`` (the parent has already created the store via
-        ``writer.initialize()``); otherwise they are written in-process.
+        Each entry is a ``(src_bounds, dest_bounds)`` pair covering exactly one
+        shard boundary at every pyramid level, so no shard is ever read back to
+        be merged. One ``write_region`` call (and one pool task) is dispatched
+        per shard; the shared pool schedules those tasks across workers, drawing
+        on later scenes' shards to keep every core busy even when a single scene
+        has fewer shards than there are workers.
         """
         shard0 = auto_shards[0]
         per_ax = [
@@ -620,40 +679,7 @@ class OmeZarrConverter:
             ]
             for ax in range(len(level0_shape))
         ]
-        shard_bounds: List[Tuple[_Bounds, _Bounds]] = [
-            (bounds, bounds) for bounds in itertools.product(*per_ax)
-        ]
-        out_dtype_str = str(self.output_dtype)
-        n_workers = self._n_workers
-
-        if n_workers > 1:
-            with ProcessPoolExecutor(max_workers=n_workers) as pool:
-                futures = [
-                    pool.submit(
-                        _write_shard_process,
-                        self.source,
-                        str(out_path),
-                        native_order,
-                        scene_index,
-                        out_dtype_str,
-                        src_bounds,
-                        dest_bounds,
-                    )
-                    for src_bounds, dest_bounds in shard_bounds
-                ]
-                for future in futures:
-                    future.result()  # surface any worker exception
-        else:
-            for src_bounds, dest_bounds in shard_bounds:
-                _write_shard_process(
-                    self.source,
-                    str(out_path),
-                    native_order,
-                    scene_index,
-                    out_dtype_str,
-                    src_bounds,
-                    dest_bounds,
-                )
+        return [(bounds, bounds) for bounds in itertools.product(*per_ax)]
 
     def _write_fallback(
         self,
