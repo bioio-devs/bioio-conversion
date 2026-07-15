@@ -451,10 +451,6 @@ class OmeZarrConverter:
                     UserWarning,
                 )
 
-        # Resolve every output path up front and fail fast if any already
-        # exists. Writes now stream into a pool that spans all scenes, so a late
-        # FileExistsError would otherwise surface only after earlier scenes'
-        # shards were already being written.
         out_paths = {
             idx: Path(self.destination) / f"{self._output_base_for_scene(idx)}.ome.zarr"
             for idx in self.scene_indices
@@ -463,13 +459,7 @@ class OmeZarrConverter:
             if path.exists():
                 raise FileExistsError(f"{path} already exists.")
 
-        # A single process pool spans *all* scenes so that when a scene has fewer
-        # shards than workers, the otherwise-idle cores immediately pick up the
-        # next scene's shards rather than standing idle until the scene finishes.
-        # Store creation (writer.initialize) is cheap metadata, so the parent
-        # stays ahead of the workers and keeps the queue full. Workers are
-        # processes because shard writes (downsample + Blosc + shard assembly)
-        # are GIL-bound; n_workers == 1 keeps the serial in-process path.
+        # A single process pool spans *all* scenes
         pool = (
             ProcessPoolExecutor(max_workers=self._n_workers)
             if self._n_workers > 1
@@ -482,7 +472,7 @@ class OmeZarrConverter:
                     scene_index, out_paths[scene_index], pool, futures
                 )
             for future in futures:
-                future.result()  # surface any worker exception
+                future.result()
         finally:
             if pool is not None:
                 pool.shutdown()
@@ -509,13 +499,9 @@ class OmeZarrConverter:
         pool: Optional[ProcessPoolExecutor],
         futures: List[Any],
     ) -> None:
-        """Build one scene's store, initialize it, and dispatch its writes.
+        """
+        Build one scene's store, initialize it, and dispatch its writes.
 
-        Auto-layout shard writes are submitted to the shared ``pool`` (one task
-        per shard) so they interleave with other scenes' shards and keep every
-        core busy; when ``pool`` is ``None`` (single worker) they run in-process.
-        Non-auto-layout stores fall back to a single-threaded write in the parent
-        process.
         """
         bio = self.bioimage
         base = self._output_base_for_scene(scene_index)
