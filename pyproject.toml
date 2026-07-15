@@ -50,8 +50,6 @@ lint = [
   "pre-commit>=2.20.0",
 ]
 
-# Reader plugins whose format-specific metadata the provenance feature harvests
-# (include_provenance=True): CZI subblock metadata and ND2 well/plate assignment.
 provenance = [
   "bioio-czi>=2.8.0",
   "bioio-nd2>=1.6.0",
