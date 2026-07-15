@@ -648,14 +648,11 @@ class OmeZarrConverter:
         auto_shards: MultiResolutionShapeSpec,
         level0_shape: Tuple[int, ...],
     ) -> List[Tuple[_Bounds, _Bounds]]:
-        """Enumerate a scene's disjoint level-0 shard regions.
+        """Enumerate a scene's level-0 shard regions, one entry per shard.
 
-        Each entry is a ``(src_bounds, dest_bounds)`` pair covering exactly one
-        shard boundary at every pyramid level, so no shard is ever read back to
-        be merged. One ``write_region`` call (and one pool task) is dispatched
-        per shard; the shared pool schedules those tasks across workers, drawing
-        on later scenes' shards to keep every core busy even when a single scene
-        has fewer shards than there are workers.
+        Returns ``(src_bounds, dest_bounds)`` pairs tiling ``level0_shape`` into
+        disjoint, shard-aligned boxes. Each region maps to exactly one shard, so
+        it can be written independently and in any order.
         """
         shard0 = auto_shards[0]
         per_ax = [
