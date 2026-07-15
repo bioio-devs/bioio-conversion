@@ -16,6 +16,7 @@ from bioio_ome_zarr.writers.ome_zarr_writer import MultiResolutionShapeSpec
 from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_target
 from zarr.codecs import BloscCodec
 
+from ..provenance import ProvenanceBuilder, write_sidecars
 from ..sharding import (
     DEFAULT_CHUNK_LIMIT_BYTES,
     DEFAULT_SHARD_LIMIT_BYTES,
@@ -123,6 +124,7 @@ class OmeZarrConverter:
         dtype: Optional[Union[str, np.dtype]] = None,
         n_workers: Optional[int] = None,
         shard_limit_bytes: int = DEFAULT_SHARD_LIMIT_BYTES,
+        include_provenance: bool = False,
     ) -> None:
         """
         Initialize an OME-Zarr converter with flexible scene selection,
@@ -220,6 +222,13 @@ class OmeZarrConverter:
             floored at 1.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
+        include_provenance : bool, default = False
+            When True, write source provenance for each scene into a top-level
+            ``"bioio"`` attributes block (a sibling of ``"ome"``): the source's
+            cross-format ``standard_metadata``, the reader plugin and package
+            versions, and the native/OME metadata XML as sidecars under
+            ``bioio/``. For CZI this also captures per-subblock metadata. Off by
+            default; see :class:`bioio_conversion.provenance.ProvenanceBuilder`.
         """
         self.source = source
         self.destination = destination or str(Path.cwd())
@@ -275,6 +284,15 @@ class OmeZarrConverter:
         # not oversubscribe a partial node; it is floored at 1.
         self._n_workers = n_workers or _available_cores()
         self._shard_limit_bytes = shard_limit_bytes
+        # Provenance (the "bioio" attribute block + source-metadata sidecars) is
+        # opt-in and lives in its own module. Build the helper only when
+        # requested; it caches its (possibly expensive, for CZI) metadata reader
+        # and whole-file XML across scenes.
+        self._provenance = (
+            ProvenanceBuilder(self.source, self.bioimage, self.scene_names)
+            if include_provenance
+            else None
+        )
 
     # -------------------------------------------------------------------------
     # Internal helpers
@@ -550,7 +568,15 @@ class OmeZarrConverter:
             if out_path.exists():
                 raise FileExistsError(f"{out_path} already exists.")
 
-            # (6) Build writer kwargs
+            # (6) Build writer kwargs. Provenance ("bioio" attrs) is merged into
+            # the root group's attributes by the writer during initialize(); the
+            # matching XML sidecars are written afterwards, once the store exists.
+            if self._provenance is not None:
+                bioio_attrs, bioio_sidecars = self._provenance.provenance_from_scene(
+                    scene_index
+                )
+            else:
+                bioio_attrs, bioio_sidecars = None, {}
             writer_kwargs: Dict[str, Any] = {
                 "store": str(out_path),
                 "level_shapes": writer_level_shapes_param,
@@ -571,6 +597,7 @@ class OmeZarrConverter:
                         "axes_types": self._writer_axes_types,
                         "axes_units": self._infer_axes_units(axis_names),
                         "physical_pixel_size": pps,
+                        "attributes": bioio_attrs,
                     }.items()
                     if v is not None
                 },
@@ -587,6 +614,10 @@ class OmeZarrConverter:
             # Every call covers exactly one shard boundary at every pyramid level
             # so no shard is ever read back to be merged (no read-modify-write).
             writer.initialize()
+
+            # Attach the source metadata XML sidecars under bioio/ now that the
+            # store exists (best-effort; see provenance.write_sidecars).
+            write_sidecars(out_path, bioio_sidecars)
 
             if can_auto_layout:
                 self._write_auto_layout_shards(

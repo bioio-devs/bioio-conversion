@@ -50,10 +50,18 @@ lint = [
   "pre-commit>=2.20.0",
 ]
 
+# Reader plugins whose format-specific metadata the provenance feature harvests
+# (include_provenance=True): CZI subblock metadata and ND2 well/plate assignment.
+provenance = [
+  "bioio-czi>=2.8.0",
+  "bioio-nd2>=1.6.0",
+]
+
 test = [
   "coverage>=5.1",
   "bioio-ome-tiff>=1.4.0",
   "bioio-czi>=2.8.0",
+  "bioio-nd2>=1.6.0",
   "pytest>=5.4.3",
   "pytest-cov>=2.9.0",
   "pytest-raises>=0.11",
