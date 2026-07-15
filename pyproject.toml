@@ -50,10 +50,16 @@ lint = [
   "pre-commit>=2.20.0",
 ]
 
+provenance = [
+  "bioio-czi>=2.8.0",
+  "bioio-nd2>=1.6.0",
+]
+
 test = [
   "coverage>=5.1",
   "bioio-ome-tiff>=1.4.0",
   "bioio-czi>=2.8.0",
+  "bioio-nd2>=1.6.0",
   "pytest>=5.4.3",
   "pytest-cov>=2.9.0",
   "pytest-raises>=0.11",

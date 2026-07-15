@@ -17,6 +17,7 @@ from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_targe
 from zarr.codecs import BloscCodec
 
 from ..channel_colors import get_channel_colors
+from ..provenance import ProvenanceBuilder, write_sidecars
 from ..sharding import (
     DEFAULT_CHUNK_LIMIT_BYTES,
     DEFAULT_SHARD_LIMIT_BYTES,
@@ -124,6 +125,7 @@ class OmeZarrConverter:
         dtype: Optional[Union[str, np.dtype]] = None,
         n_workers: Optional[int] = None,
         shard_limit_bytes: int = DEFAULT_SHARD_LIMIT_BYTES,
+        include_provenance: bool = False,
     ) -> None:
         """
         Initialize an OME-Zarr converter with flexible scene selection,
@@ -221,6 +223,10 @@ class OmeZarrConverter:
             floored at 1.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
+        include_provenance : bool, default = False
+            When True, write source provenance for each scene into a top-level
+            ``"bioio"`` attributes block. The native/OME metadata XML as sidecars
+            under ``bioio/``.
         """
         self.source = source
         self.destination = destination or str(Path.cwd())
@@ -263,6 +269,11 @@ class OmeZarrConverter:
         # Helpers
         self._helper_num_levels = num_levels
         self._helper_downsample_z = downsample_z
+        self._provenance = (
+            ProvenanceBuilder(self.source, self.bioimage, self.scene_names)
+            if include_provenance
+            else None
+        )
 
         # Chunk suggestion
         self._helper_memory_target_bytes = (
@@ -610,6 +621,12 @@ class OmeZarrConverter:
             writer_chunk_shape_param = None  # writer suggests per-level ~16 MiB
 
         # (5) Build writer kwargs
+        if self._provenance is not None:
+            bioio_attrs, bioio_sidecars = self._provenance.provenance_from_scene(
+                scene_index
+            )
+        else:
+            bioio_attrs, bioio_sidecars = None, {}
         writer_kwargs: Dict[str, Any] = {
             "store": str(out_path),
             "level_shapes": writer_level_shapes_param,
@@ -630,6 +647,7 @@ class OmeZarrConverter:
                     "axes_types": self._writer_axes_types,
                     "axes_units": self._infer_axes_units(axis_names),
                     "physical_pixel_size": pps,
+                    "attributes": bioio_attrs,
                 }.items()
                 if v is not None
             },
@@ -646,6 +664,9 @@ class OmeZarrConverter:
         # covers exactly one shard boundary at every pyramid level so no shard is
         # ever read back to be merged (no read-modify-write).
         writer.initialize()
+
+        # Attach the source metadata XML sidecars under bioio/.
+        write_sidecars(out_path, bioio_sidecars)
 
         if can_auto_layout:
             out_dtype_str = str(self.output_dtype)
