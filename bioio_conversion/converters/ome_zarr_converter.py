@@ -546,9 +546,14 @@ class OmeZarrConverter:
                 else f"{self.output_basename}_{scene_name}"
             )
             base = re.sub(r"[<>:\"/\\|?*]", "_", base)
-            out_path = Path(self.destination) / f"{base}.ome.zarr"
-            if out_path.exists():
-                raise FileExistsError(f"{out_path} already exists.")
+            if "://" in self.destination:
+                # Destination is a URI (e.g., S3, GCS, etc.)
+                out_path = self.destination.rstrip("/") + f"/{base}.ome.zarr"
+            else:
+                # Destination is a local path
+                out_path = Path(self.destination) / f"{base}.ome.zarr"
+                if out_path.exists():
+                    raise FileExistsError(f"{out_path} already exists.")
 
             # (6) Build writer kwargs
             writer_kwargs: Dict[str, Any] = {
