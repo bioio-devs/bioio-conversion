@@ -133,8 +133,9 @@ class OmeZarrConverter:
         source : str
             Path to the input image (any format supported by BioImage).
         destination : Optional[str]
-            Local directory or remote URI under which to write the ``.ome.zarr`` output(s).
-            If ``None``, the converter will use the current working directory
+            Local directory or remote URI under which to write the ``.ome.zarr``
+            output(s). If ``None``, the converter will use the current working
+            directory
         scenes : Optional[Union[int, List[int]]]
             Which scene(s) to export:
             - ``None`` → export all scenes
@@ -546,18 +547,20 @@ class OmeZarrConverter:
                 else f"{self.output_basename}_{scene_name}"
             )
             base = re.sub(r"[<>:\"/\\|?*]", "_", base)
+
             if "://" in self.destination:
                 # Destination is a URI (e.g., S3, GCS, etc.)
                 out_path = self.destination.rstrip("/") + f"/{base}.ome.zarr"
             else:
                 # Destination is a local path
-                out_path = Path(self.destination) / f"{base}.ome.zarr"
-                if out_path.exists():
+                out_pathlib_path = Path(self.destination) / f"{base}.ome.zarr"
+                if out_pathlib_path.exists():
                     raise FileExistsError(f"{out_path} already exists.")
+                out_path = str(out_pathlib_path)
 
             # (6) Build writer kwargs
             writer_kwargs: Dict[str, Any] = {
-                "store": str(out_path),
+                "store": out_path,
                 "level_shapes": writer_level_shapes_param,
                 "dtype": self.output_dtype,
                 **{
@@ -603,7 +606,7 @@ class OmeZarrConverter:
 
     def _write_auto_layout_shards(
         self,
-        out_path: Path,
+        out_path: str,
         native_order: str,
         scene_index: int,
         auto_shards: MultiResolutionShapeSpec,
@@ -637,7 +640,7 @@ class OmeZarrConverter:
                     pool.submit(
                         _write_shard_process,
                         self.source,
-                        str(out_path),
+                        out_path,
                         native_order,
                         scene_index,
                         out_dtype_str,
