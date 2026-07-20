@@ -133,7 +133,7 @@ class OmeZarrConverter:
         source : str
             Path to the input image (any format supported by BioImage).
         destination : Optional[str]
-            Directory in which to write the ``.ome.zarr`` output(s).
+            Local directory or remote URI under which to write the ``.ome.zarr`` output(s).
             If ``None``, the converter will use the current working directory
         scenes : Optional[Union[int, List[int]]]
             Which scene(s) to export:
