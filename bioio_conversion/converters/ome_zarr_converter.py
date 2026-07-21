@@ -5,6 +5,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import fsspec
 import numcodecs
 import numpy as np
 import psutil
@@ -548,15 +549,17 @@ class OmeZarrConverter:
             )
             base = re.sub(r"[<>:\"/\\|?*]", "_", base)
 
-            if "://" in self.destination:
+            if fsspec.utils.get_protocol(self.destination) == "file":
+                # Destination is a local path
+                out_path = str(Path(self.destination) / f"{base}.ome.zarr")
+            else:
                 # Destination is a URI (e.g., S3, GCS, etc.)
                 out_path = self.destination.rstrip("/") + f"/{base}.ome.zarr"
-            else:
-                # Destination is a local path
-                out_pathlib_path = Path(self.destination) / f"{base}.ome.zarr"
-                if out_pathlib_path.exists():
-                    raise FileExistsError(f"{out_path} already exists.")
-                out_path = str(out_pathlib_path)
+                
+            fs, _ = fsspec.core.url_to_fs(self.destination)
+            if fs.exists(out_path):
+                raise FileExistsError(f"{out_path} already exists.")
+
 
             # (6) Build writer kwargs
             writer_kwargs: Dict[str, Any] = {
