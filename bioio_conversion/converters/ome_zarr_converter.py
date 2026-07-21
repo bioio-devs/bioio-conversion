@@ -555,11 +555,10 @@ class OmeZarrConverter:
             else:
                 # Destination is a URI (e.g., S3, GCS, etc.)
                 out_path = self.destination.rstrip("/") + f"/{base}.ome.zarr"
-                
+
             fs, _ = fsspec.core.url_to_fs(self.destination)
             if fs.exists(out_path):
                 raise FileExistsError(f"{out_path} already exists.")
-
 
             # (6) Build writer kwargs
             writer_kwargs: Dict[str, Any] = {
