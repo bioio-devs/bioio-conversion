@@ -259,8 +259,9 @@ pyramid construction, and chunk-sizing.</p>
 <dd class="field-odd"><dl>
 <dt><strong>source</strong><span class="classifier">str</span></dt><dd><p>Path to the input image (any format supported by BioImage).</p>
 </dd>
-<dt><strong>destination</strong><span class="classifier">Optional[str]</span></dt><dd><p>Directory in which to write the <code class="docutils literal notranslate"><span class="pre">.ome.zarr</span></code> output(s).
-If <code class="docutils literal notranslate"><span class="pre">None</span></code>, the converter will use the current working directory</p>
+<dt><strong>destination</strong><span class="classifier">Optional[str]</span></dt><dd><p>Local directory or remote URI under which to write the <code class="docutils literal notranslate"><span class="pre">.ome.zarr</span></code>
+output(s). If <code class="docutils literal notranslate"><span class="pre">None</span></code>, the converter will use the current working
+directory</p>
 </dd>
 <dt><strong>scenes</strong><span class="classifier">Optional[Union[int, List[int]]]</span></dt><dd><p>Which scene(s) to export:
 - <code class="docutils literal notranslate"><span class="pre">None</span></code> → export all scenes

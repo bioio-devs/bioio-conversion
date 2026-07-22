@@ -242,6 +242,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">fsspec</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numcodecs</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">psutil</span>
@@ -374,8 +375,9 @@
 <span class="sd">        source : str</span>
 <span class="sd">            Path to the input image (any format supported by BioImage).</span>
 <span class="sd">        destination : Optional[str]</span>
-<span class="sd">            Directory in which to write the ``.ome.zarr`` output(s).</span>
-<span class="sd">            If ``None``, the converter will use the current working directory</span>
+<span class="sd">            Local directory or remote URI under which to write the ``.ome.zarr``</span>
+<span class="sd">            output(s). If ``None``, the converter will use the current working</span>
+<span class="sd">            directory</span>
 <span class="sd">        scenes : Optional[Union[int, List[int]]]</span>
 <span class="sd">            Which scene(s) to export:</span>
 <span class="sd">            - ``None`` → export all scenes</span>
@@ -790,13 +792,21 @@
                 <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">output_basename</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">scene_name</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
             <span class="n">base</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[&lt;&gt;:</span><span class="se">\&quot;</span><span class="s2">/</span><span class="se">\\</span><span class="s2">|?*]&quot;</span><span class="p">,</span> <span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="n">base</span><span class="p">)</span>
-            <span class="n">out_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">.ome.zarr&quot;</span>
-            <span class="k">if</span> <span class="n">out_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+
+            <span class="k">if</span> <span class="n">fsspec</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">get_protocol</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;file&quot;</span><span class="p">:</span>
+                <span class="c1"># Destination is a local path</span>
+                <span class="n">out_path</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">.ome.zarr&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Destination is a URI (e.g., S3, GCS, etc.)</span>
+                <span class="n">out_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;/</span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">.ome.zarr&quot;</span>
+
+            <span class="n">fs</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">fsspec</span><span class="o">.</span><span class="n">core</span><span class="o">.</span><span class="n">url_to_fs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">fs</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">out_path</span><span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">FileExistsError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">out_path</span><span class="si">}</span><span class="s2"> already exists.&quot;</span><span class="p">)</span>
 
             <span class="c1"># (6) Build writer kwargs</span>
             <span class="n">writer_kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="s2">&quot;store&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">out_path</span><span class="p">),</span>
+                <span class="s2">&quot;store&quot;</span><span class="p">:</span> <span class="n">out_path</span><span class="p">,</span>
                 <span class="s2">&quot;level_shapes&quot;</span><span class="p">:</span> <span class="n">writer_level_shapes_param</span><span class="p">,</span>
                 <span class="s2">&quot;dtype&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">,</span>
                 <span class="o">**</span><span class="p">{</span>
@@ -843,7 +853,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_write_auto_layout_shards</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">out_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
+        <span class="n">out_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">native_order</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">scene_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">auto_shards</span><span class="p">:</span> <span class="n">MultiResolutionShapeSpec</span><span class="p">,</span>
@@ -877,7 +887,7 @@
                     <span class="n">pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span>
                         <span class="n">_write_shard_process</span><span class="p">,</span>
                         <span class="bp">self</span><span class="o">.</span><span class="n">source</span><span class="p">,</span>
-                        <span class="nb">str</span><span class="p">(</span><span class="n">out_path</span><span class="p">),</span>
+                        <span class="n">out_path</span><span class="p">,</span>
                         <span class="n">native_order</span><span class="p">,</span>
                         <span class="n">scene_index</span><span class="p">,</span>
                         <span class="n">out_dtype_str</span><span class="p">,</span>
