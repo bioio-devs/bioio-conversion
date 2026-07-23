@@ -121,7 +121,7 @@ class ProvenanceBuilder:
             img = BioImage(self._source, **reader_kwargs)
         except Exception as exc:
             warnings.warn(
-                f"Could not open a dedicated {self._plugin} metadata reader; "
+                f"Could not open a dedicated {self._plugin} metadata reader, "
                 f"using the default reader for provenance: {exc}",
                 UserWarning,
             )
@@ -130,7 +130,7 @@ class ProvenanceBuilder:
         if sorted(img.scenes) != sorted(self._scene_names):
             warnings.warn(
                 f"{self._plugin} metadata reader disagrees with the default "
-                f"reader on scene names; using the default reader for provenance.",
+                f"reader on scene names, using the default reader for provenance.",
                 UserWarning,
             )
             return self._metadata_bioimage
@@ -215,7 +215,7 @@ class ProvenanceBuilder:
             }
         except Exception as exc:
             warnings.warn(
-                f"Could not read standard_metadata; omitting 'bioio' "
+                f"Could not read standard_metadata, omitting 'bioio' "
                 f"attributes: {exc}",
                 UserWarning,
             )

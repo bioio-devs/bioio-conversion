@@ -627,7 +627,7 @@ class OmeZarrConverter:
 
             # Attach the source metadata XML sidecars under bioio/ now that the
             # store exists (best-effort; see provenance.write_sidecars).
-            write_sidecars(out_path, bioio_sidecars)
+            write_sidecars(Path(out_path), bioio_sidecars)
 
             if can_auto_layout:
                 self._write_auto_layout_shards(
