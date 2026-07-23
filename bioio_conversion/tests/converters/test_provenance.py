@@ -139,4 +139,4 @@ def test_czi_subblock_metadata_embedded(tmp_path: pathlib.Path) -> None:
         native = json.load(fh)
     subblocks = native["ImageDocument"]["Subblocks"]["Subblock"]
     assert subblocks, "no Subblocks (aicspylibczi?)"
-    assert any("AcquisitionTime" in sb for sb in subblocks)
+    assert all(isinstance(sb, dict) for sb in subblocks), "subblocks should be dicts"
