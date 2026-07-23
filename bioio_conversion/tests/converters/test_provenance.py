@@ -82,17 +82,17 @@ def test_provenance_attributes(
 
 
 @pytest.mark.parametrize(
-    "src_name, native_tag",
+    "src_name, deduped",
     [
-        ("s_1_t_1_c_1_z_1.czi", "ImageDocument"),  # native differs from OME
-        ("s_3_t_1_c_3_z_5.ome.tiff", "OME"),  # native already OME -> deduped
+        ("s_1_t_1_c_1_z_1.czi", False),  # native (CZI XML) differs from OME
+        ("s_3_t_1_c_3_z_5.ome.tiff", True),  # native is also OME -> deduped
     ],
 )
-def test_metadata_xml_sidecars(
-    tmp_path: pathlib.Path, src_name: str, native_tag: str
+def test_metadata_json_sidecars(
+    tmp_path: pathlib.Path, src_name: str, deduped: bool
 ) -> None:
     """
-    The native and OME metadata are written as XML sidecars under bioio/.
+    Native and OME metadata are written as JSON sidecars at the store root.
     """
     _convert(tmp_path, src_name, "s")
     store = tmp_path / "s.ome.zarr"
@@ -102,12 +102,18 @@ def test_metadata_xml_sidecars(
         native = json.load(fh)
     with open(store / bioio["ome_metadata"]) as fh:
         ome = json.load(fh)
-    assert next(iter(native)) == native_tag
-    assert next(iter(ome)) == "OME"
 
-    deduped = native_tag == "OME"
+    assert "images" in ome  # ome-types model_dump always has this
+    if deduped:
+        assert native == ome
+    else:
+        assert "ImageDocument" in native  # CZI native XML root key
+
     assert (bioio["source_metadata"] == bioio["ome_metadata"]) is deduped
-    assert sorted(os.listdir(store / "bioio")) == (
+    sidecar_files = [
+        f for f in os.listdir(store) if f.endswith(".json") and f != "zarr.json"
+    ]
+    assert sorted(sidecar_files) == (
         ["metadata.ome.json"]
         if deduped
         else ["metadata.native.json", "metadata.ome.json"]

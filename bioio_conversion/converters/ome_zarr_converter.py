@@ -221,16 +221,14 @@ class OmeZarrConverter:
         n_workers : Optional[int]
             Number of worker *processes* for shard writes (auto-layout path).
             If ``None`` (default), derived from the cores actually available to
-            the process. One process per core,
-            floored at 1.
+            the process. One process per core, floored at 1.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
         include_provenance : bool, default = False
             When True, write source provenance for each scene into a top-level
-            ``"bioio"`` attributes block (a sibling of ``"ome"``): the source's
-            cross-format ``standard_metadata``, the reader plugin and package
-            versions, and the native/OME metadata XML as sidecars under
-            ``bioio/``. Off by default; see
+            ``"bioio"`` attributes block: the source's ``standard_metadata``,
+            the reader plugin and package versions, and the native/OME metadata
+            as JSON sidecars under ``bioio/``. Off by default; see
             :class:`bioio_conversion.provenance.ProvenanceBuilder`.
         provenance_reader_kwargs : dict, optional
             Extra kwargs forwarded to ``BioImage`` when opening a dedicated
@@ -291,10 +289,7 @@ class OmeZarrConverter:
         # not oversubscribe a partial node; it is floored at 1.
         self._n_workers = n_workers or _available_cores()
         self._shard_limit_bytes = shard_limit_bytes
-        # Provenance (the "bioio" attribute block + source-metadata sidecars) is
-        # opt-in and lives in its own module. Build the helper only when
-        # requested; it caches its (possibly expensive, for CZI) metadata reader
-        # and whole-file XML across scenes.
+        # Provenance (the "bioio" attribute block + source-metadata sidecars)
         self._provenance = (
             ProvenanceBuilder(
                 self.source,
@@ -636,7 +631,7 @@ class OmeZarrConverter:
             writer.initialize()
 
             # Attach the source metadata XML sidecars under bioio/ now that the
-            # store exists (best-effort; see provenance.write_sidecars).
+            # store exists (as json).
             write_sidecars(Path(out_path), bioio_sidecars)
 
             if can_auto_layout:
