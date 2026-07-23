@@ -126,6 +126,7 @@ class OmeZarrConverter:
         n_workers: Optional[int] = None,
         shard_limit_bytes: int = DEFAULT_SHARD_LIMIT_BYTES,
         include_provenance: bool = False,
+        provenance_reader_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Initialize an OME-Zarr converter with flexible scene selection,
@@ -229,8 +230,12 @@ class OmeZarrConverter:
             ``"bioio"`` attributes block (a sibling of ``"ome"``): the source's
             cross-format ``standard_metadata``, the reader plugin and package
             versions, and the native/OME metadata XML as sidecars under
-            ``bioio/``. For CZI this also captures per-subblock metadata. Off by
-            default; see :class:`bioio_conversion.provenance.ProvenanceBuilder`.
+            ``bioio/``. Off by default; see
+            :class:`bioio_conversion.provenance.ProvenanceBuilder`.
+        provenance_reader_kwargs : dict, optional
+            Extra kwargs forwarded to ``BioImage`` when opening a dedicated
+            metadata reader for provenance. When ``None`` (default) the pixel
+            reader is reused as-is. Ignored when ``include_provenance=False``.
         """
         self.source = source
         self.destination = destination or str(Path.cwd())
@@ -291,7 +296,12 @@ class OmeZarrConverter:
         # requested; it caches its (possibly expensive, for CZI) metadata reader
         # and whole-file XML across scenes.
         self._provenance = (
-            ProvenanceBuilder(self.source, self.bioimage, self.scene_names)
+            ProvenanceBuilder(
+                self.source,
+                self.bioimage,
+                self.scene_names,
+                metadata_reader_kwargs=provenance_reader_kwargs,
+            )
             if include_provenance
             else None
         )

@@ -10,7 +10,7 @@ import pytest
 from bioio import BioImage
 
 from bioio_conversion.converters.ome_zarr_converter import OmeZarrConverter
-from bioio_conversion.provenance import _json_safe, _metadata_reader_kwargs
+from bioio_conversion.provenance import _json_safe
 
 from ..conftest import LOCAL_RESOURCES_DIR
 
@@ -22,6 +22,7 @@ def _convert(
     *,
     scenes: Optional[int] = 0,
     provenance: bool = True,
+    provenance_reader_kwargs: Optional[dict] = None,
 ) -> None:
     """Convert a resource fixture into ``tmp_path`` with the given options."""
     OmeZarrConverter(
@@ -31,6 +32,7 @@ def _convert(
         scenes=scenes,
         zarr_format=3,
         include_provenance=provenance,
+        provenance_reader_kwargs=provenance_reader_kwargs,
         n_workers=1,
     ).convert()
 
@@ -71,8 +73,8 @@ def test_provenance_attributes(
     } <= set(bioio["bioio_python_versions"])
     datetime.datetime.fromisoformat(bioio["converted"])
     src = str(LOCAL_RESOURCES_DIR / src_name)
-    scene_name = BioImage(src).scenes[scene_index]
-    meta = BioImage(src, **(_metadata_reader_kwargs(plugin) or {}))
+    meta = BioImage(src)
+    scene_name = meta.scenes[scene_index]
     meta.set_scene(scene_name)
     expected = {
         k: _json_safe(v) for k, v in dataclasses.asdict(meta.standard_metadata).items()
@@ -111,10 +113,18 @@ def test_metadata_xml_sidecars(
 
 def test_czi_subblock_metadata_embedded(tmp_path: pathlib.Path) -> None:
     """
-    CZI provenance is sourced from a dedicated aicspylibczi reader, so the native
+    When aicspylibczi kwargs are passed via provenance_reader_kwargs the native
     XML carries per-subblock metadata under <Subblocks>.
     """
-    _convert(tmp_path, "s_3_t_1_c_3_z_5.czi", "czi")
+    _convert(
+        tmp_path,
+        "s_3_t_1_c_3_z_5.czi",
+        "czi",
+        provenance_reader_kwargs={
+            "use_aicspylibczi": True,
+            "include_subblock_metadata": True,
+        },
+    )
     store = tmp_path / "czi.ome.zarr"
     native = ET.parse(store / _root_attrs(store)["bioio"]["source_metadata"]).getroot()
     assert native.findall("./Subblocks/Subblock"), "no <Subblocks> (aicspylibczi?)"

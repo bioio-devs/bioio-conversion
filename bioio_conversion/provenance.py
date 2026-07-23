@@ -50,33 +50,13 @@ def _metadata_as_xml(bio: BioImage, attr: str, label: str) -> Optional[str]:
         return None
 
 
-def _metadata_reader_kwargs(plugin: Optional[str]) -> Optional[Dict[str, Any]]:
-    """``BioImage`` kwargs for a format's dedicated metadata reader, or ``None``.
-
-    Some bioio plugins surface richer metadata under non-default reader options
-    than are wanted for pixel reads; provenance opens a second reader with these
-    kwargs. Returns ``None`` when the format has no such options (use the pixel
-    reader as-is).
-    """
-    if plugin == "bioio-czi":
-        # aicspylibczi exposes per-subblock metadata and derives extra
-        # standard_metadata fields the default (pylibczirw) backend leaves unset.
-        return {"use_aicspylibczi": True, "include_subblock_metadata": True}
-    if plugin == "bioio-nd2":
-        # The standard 96-well plate geometry lets the reader assign each scene's
-        # stage position to a well, populating standard_metadata row/column.
-        from bioio_nd2.plates import PLATE_96
-
-        return {"plate": PLATE_96}
-    return None
-
-
 class ProvenanceBuilder:
     def __init__(
         self,
         source: str,
         bioimage: BioImage,
         scene_names: Sequence[str],
+        metadata_reader_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Builds the ``"bioio"`` provenance attributes and XML sidecars.
@@ -89,11 +69,16 @@ class ProvenanceBuilder:
             The conversion's pixel reader.
         scene_names : Sequence[str]
             The pixel reader's scene names, indexed by ``scene_index``.
+        metadata_reader_kwargs : dict, optional
+            Extra kwargs forwarded to ``BioImage`` when opening a dedicated
+            metadata reader. When ``None`` (default) the pixel reader is used
+            as-is for provenance.
         """
         self._source = source
         self._bioimage = bioimage
         self._scene_names = scene_names
         self._plugin = type(bioimage.reader).__module__.split(".")[0].replace("_", "-")
+        self._metadata_reader_kwargs = metadata_reader_kwargs
         self._metadata_bioimage: Optional[BioImage] = None
         self._metadata_xml_cache: Optional[Tuple[Optional[str], Optional[str]]] = None
         self._whole_file_cache: Optional[Tuple[Dict[str, Any], Dict[str, str]]] = None
@@ -113,12 +98,11 @@ class ProvenanceBuilder:
             return self._metadata_bioimage
 
         self._metadata_bioimage = self._bioimage
-        reader_kwargs = _metadata_reader_kwargs(self._plugin)
-        if reader_kwargs is None:
+        if self._metadata_reader_kwargs is None:
             return self._metadata_bioimage
 
         try:
-            img = BioImage(self._source, **reader_kwargs)
+            img = BioImage(self._source, **self._metadata_reader_kwargs)
         except Exception as exc:
             warnings.warn(
                 f"Could not open a dedicated {self._plugin} metadata reader, "
