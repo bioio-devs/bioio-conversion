@@ -5,6 +5,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import fsspec
 import numcodecs
 import numpy as np
 import psutil
@@ -135,8 +136,9 @@ class OmeZarrConverter:
         source : str
             Path to the input image (any format supported by BioImage).
         destination : Optional[str]
-            Directory in which to write the ``.ome.zarr`` output(s).
-            If ``None``, the converter will use the current working directory
+            Local directory or remote URI under which to write the ``.ome.zarr``
+            output(s). If ``None``, the converter will use the current working
+            directory
         scenes : Optional[Union[int, List[int]]]
             Which scene(s) to export:
             - ``None`` → export all scenes
@@ -564,8 +566,16 @@ class OmeZarrConverter:
                 else f"{self.output_basename}_{scene_name}"
             )
             base = re.sub(r"[<>:\"/\\|?*]", "_", base)
-            out_path = Path(self.destination) / f"{base}.ome.zarr"
-            if out_path.exists():
+
+            if fsspec.utils.get_protocol(self.destination) == "file":
+                # Destination is a local path
+                out_path = str(Path(self.destination) / f"{base}.ome.zarr")
+            else:
+                # Destination is a URI (e.g., S3, GCS, etc.)
+                out_path = self.destination.rstrip("/") + f"/{base}.ome.zarr"
+
+            fs, _ = fsspec.core.url_to_fs(self.destination)
+            if fs.exists(out_path):
                 raise FileExistsError(f"{out_path} already exists.")
 
             # (6) Build writer kwargs. Provenance ("bioio" attrs) is merged into
@@ -578,7 +588,7 @@ class OmeZarrConverter:
             else:
                 bioio_attrs, bioio_sidecars = None, {}
             writer_kwargs: Dict[str, Any] = {
-                "store": str(out_path),
+                "store": out_path,
                 "level_shapes": writer_level_shapes_param,
                 "dtype": self.output_dtype,
                 **{
@@ -629,7 +639,7 @@ class OmeZarrConverter:
 
     def _write_auto_layout_shards(
         self,
-        out_path: Path,
+        out_path: str,
         native_order: str,
         scene_index: int,
         auto_shards: MultiResolutionShapeSpec,
@@ -663,7 +673,7 @@ class OmeZarrConverter:
                     pool.submit(
                         _write_shard_process,
                         self.source,
-                        str(out_path),
+                        out_path,
                         native_order,
                         scene_index,
                         out_dtype_str,

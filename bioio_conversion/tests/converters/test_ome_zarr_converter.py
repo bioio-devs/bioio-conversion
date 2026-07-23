@@ -306,6 +306,33 @@ def test_conversion_pixel_correctness(
     assert_array_equal(bio_out.get_image_data(), bio_in.get_image_data())
 
 
+def test_convert_fails_if_destination_exists(tmp_path: pathlib.Path) -> None:
+    """
+    Conversion must refuse to write over an existing output store. The first
+    conversion succeeds and creates ``<name>.ome.zarr``; a second conversion to
+    the same destination and name must raise ``FileExistsError`` rather than
+    clobbering or appending to the existing store.
+    """
+    src_path = LOCAL_RESOURCES_DIR / "s_1_t_1_c_1_z_1.ome.tiff"
+    zarr_name = "already_exists"
+
+    def _convert() -> None:
+        OmeZarrConverter(
+            source=str(src_path),
+            destination=str(tmp_path),
+            name=zarr_name,
+            scenes=0,
+        ).convert()
+
+    # First conversion creates the store.
+    _convert()
+    assert (tmp_path / f"{zarr_name}.ome.zarr").exists()
+
+    # Second conversion to the same path must fail.
+    with pytest.raises(FileExistsError):
+        _convert()
+
+
 def test_multiprocess_matches_singleprocess(tmp_path: pathlib.Path) -> None:
     """
     Concurrent lock-free shard writes (n_workers=2) must produce a byte-identical
