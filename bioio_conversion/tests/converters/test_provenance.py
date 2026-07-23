@@ -3,7 +3,6 @@ import datetime
 import json
 import os
 import pathlib
-import xml.etree.ElementTree as ET
 from typing import Optional
 
 import pytest
@@ -99,15 +98,19 @@ def test_metadata_xml_sidecars(
     store = tmp_path / "s.ome.zarr"
     bioio = _root_attrs(store)["bioio"]
 
-    native = ET.parse(store / bioio["source_metadata"]).getroot()
-    ome = ET.parse(store / bioio["ome_metadata"]).getroot()
-    assert native.tag.split("}")[-1] == native_tag
-    assert ome.tag.split("}")[-1] == "OME"
+    with open(store / bioio["source_metadata"]) as fh:
+        native = json.load(fh)
+    with open(store / bioio["ome_metadata"]) as fh:
+        ome = json.load(fh)
+    assert next(iter(native)) == native_tag
+    assert next(iter(ome)) == "OME"
 
     deduped = native_tag == "OME"
     assert (bioio["source_metadata"] == bioio["ome_metadata"]) is deduped
     assert sorted(os.listdir(store / "bioio")) == (
-        ["metadata.ome.xml"] if deduped else ["metadata.native.xml", "metadata.ome.xml"]
+        ["metadata.ome.json"]
+        if deduped
+        else ["metadata.native.json", "metadata.ome.json"]
     )
 
 
@@ -126,6 +129,8 @@ def test_czi_subblock_metadata_embedded(tmp_path: pathlib.Path) -> None:
         },
     )
     store = tmp_path / "czi.ome.zarr"
-    native = ET.parse(store / _root_attrs(store)["bioio"]["source_metadata"]).getroot()
-    assert native.findall("./Subblocks/Subblock"), "no <Subblocks> (aicspylibczi?)"
-    assert native.find(".//Subblocks/Subblock//AcquisitionTime") is not None
+    with open(store / _root_attrs(store)["bioio"]["source_metadata"]) as fh:
+        native = json.load(fh)
+    subblocks = native["ImageDocument"]["Subblocks"]["Subblock"]
+    assert subblocks, "no Subblocks (aicspylibczi?)"
+    assert any("AcquisitionTime" in sb for sb in subblocks)

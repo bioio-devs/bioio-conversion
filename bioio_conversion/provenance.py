@@ -1,15 +1,43 @@
 import dataclasses
 import datetime
 import importlib.metadata
+import json
 import warnings
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
+import xmltodict
 from bioio import BioImage
 
-# Store-relative paths for the source metadata XML sidecars written under bioio/.
-NATIVE_XML_PATH = "bioio/metadata.native.xml"
-OME_XML_PATH = "bioio/metadata.ome.xml"
+# Store-relative paths for the source metadata sidecars written under bioio/.
+NATIVE_METADATA_PATH = "bioio/metadata.native.json"
+OME_METADATA_PATH = "bioio/metadata.ome.json"
+
+# OME schema elements that can appear one or more times; passed to xmltodict so
+# the output shape is stable regardless of how many siblings are present.
+_OME_FORCE_LIST = (
+    "Annotation",
+    "Channel",
+    "Dataset",
+    "Detector",
+    "Dichroic",
+    "Experimenter",
+    "ExperimenterGroup",
+    "Filter",
+    "FilterSet",
+    "Image",
+    "Objective",
+    "Plate",
+    "PlateAcquisition",
+    "Plane",
+    "Project",
+    "ROI",
+    "Screen",
+    "Shape",
+    "TiffData",
+    "Well",
+    "WellSample",
+)
 
 
 def _json_safe(value: Any) -> Any:
@@ -177,8 +205,8 @@ class ProvenanceBuilder:
             sidecars[path] = content
 
         ome_xml, native_xml = self._metadata_xml()
-        attach("ome_metadata", OME_XML_PATH, ome_xml)
-        attach("source_metadata", NATIVE_XML_PATH, native_xml)
+        attach("ome_metadata", OME_METADATA_PATH, ome_xml)
+        attach("source_metadata", NATIVE_METADATA_PATH, native_xml)
 
         self._whole_file_cache = (block, sidecars)
         return self._whole_file_cache
@@ -211,13 +239,19 @@ class ProvenanceBuilder:
 
 def write_sidecars(store_path: Path, sidecars: Dict[str, str]) -> None:
     """
-    Write XML sidecar files into an already-initialized store directory.
+    Write metadata sidecar files into an already-initialized store directory.
+
+    Each XML string is converted to a JSON-serializable dict via ``xmltodict``
+    and written as a ``.json`` file.
     """
-    for rel_path, contents in sidecars.items():
+    for rel_path, xml_content in sidecars.items():
         try:
             sidecar_path = store_path / rel_path
             sidecar_path.parent.mkdir(parents=True, exist_ok=True)
-            sidecar_path.write_text(contents, encoding="utf-8")
+            sidecar_path.write_text(
+                json.dumps(xmltodict.parse(xml_content, force_list=_OME_FORCE_LIST)),
+                encoding="utf-8",
+            )
         except Exception as exc:
             warnings.warn(
                 f"Could not write metadata sidecar {rel_path!r}: {exc}",
