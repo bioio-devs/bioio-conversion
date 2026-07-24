@@ -5,6 +5,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import fsspec
 import numcodecs
 import numpy as np
 import psutil
@@ -133,8 +134,9 @@ class OmeZarrConverter:
         source : str
             Path to the input image (any format supported by BioImage).
         destination : Optional[str]
-            Directory in which to write the ``.ome.zarr`` output(s).
-            If ``None``, the converter will use the current working directory
+            Local directory or remote URI under which to write the ``.ome.zarr``
+            output(s). If ``None``, the converter will use the current working
+            directory
         scenes : Optional[Union[int, List[int]]]
             Which scene(s) to export:
             - ``None`` → export all scenes
@@ -216,8 +218,7 @@ class OmeZarrConverter:
         n_workers : Optional[int]
             Number of worker *processes* for shard writes (auto-layout path).
             If ``None`` (default), derived from the cores actually available to
-            the process. One process per core,
-            floored at 1.
+            the process. One process per core, floored at 1.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
         """
@@ -451,12 +452,17 @@ class OmeZarrConverter:
                     UserWarning,
                 )
 
-        out_paths = {
-            idx: Path(self.destination) / f"{self._output_base_for_scene(idx)}.ome.zarr"
-            for idx in self.scene_indices
-        }
+        fs, _ = fsspec.core.url_to_fs(self.destination)
+        is_local = fsspec.utils.get_protocol(self.destination) == "file"
+        out_paths: Dict[int, str] = {}
+        for idx in self.scene_indices:
+            base = self._output_base_for_scene(idx)
+            if is_local:
+                out_paths[idx] = str(Path(self.destination) / f"{base}.ome.zarr")
+            else:
+                out_paths[idx] = self.destination.rstrip("/") + f"/{base}.ome.zarr"
         for path in out_paths.values():
-            if path.exists():
+            if fs.exists(path):
                 raise FileExistsError(f"{path} already exists.")
 
         # A single process pool spans *all* scenes
@@ -495,7 +501,7 @@ class OmeZarrConverter:
     def _plan_and_dispatch_scene(
         self,
         scene_index: int,
-        out_path: Path,
+        out_path: str,
         pool: Optional[ProcessPoolExecutor],
         futures: List[Any],
     ) -> None:
@@ -585,7 +591,7 @@ class OmeZarrConverter:
 
         # (5) Build writer kwargs
         writer_kwargs: Dict[str, Any] = {
-            "store": str(out_path),
+            "store": out_path,
             "level_shapes": writer_level_shapes_param,
             "dtype": self.output_dtype,
             **{
