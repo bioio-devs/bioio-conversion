@@ -3,6 +3,7 @@ import datetime
 import importlib.metadata
 import json
 import warnings
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
@@ -15,9 +16,7 @@ OME_METADATA_PATH = "metadata.ome.json"
 
 
 def _json_safe(value: Any) -> Any:
-    """
-    Coerce a ``StandardMetadata`` value into a JSON-serializable primitive.
-    """
+    """Coerce a ``StandardMetadata`` value into a JSON-serializable primitive."""
     if isinstance(value, datetime.datetime):
         return value.isoformat()
     if isinstance(value, datetime.timedelta):
@@ -30,13 +29,12 @@ def _package_version(name: str) -> Optional[str]:
     try:
         return importlib.metadata.version(name)
     except importlib.metadata.PackageNotFoundError:
+        warnings.warn(f"Could not determine version for {name!r}", UserWarning)
         return None
 
 
 def _metadata_as_dict(bio: BioImage, attr: str, label: str) -> Optional[Dict[str, Any]]:
-    """
-    Convert a metadata object to a JSON-serializable dict, or None.
-    """
+    """Convert a metadata object to a JSON-serializable dict, or None."""
     try:
         md = getattr(bio, attr)
         if md is None:
@@ -46,8 +44,6 @@ def _metadata_as_dict(bio: BioImage, attr: str, label: str) -> Optional[Dict[str
         if callable(getattr(md, "json", None)):
             return json.loads(md.json())  # Pydantic v1
         if hasattr(md, "tag") and hasattr(md, "iter"):
-            import xml.etree.ElementTree as ET
-
             return xmltodict.parse(ET.tostring(md, encoding="unicode"))
         return None
     except Exception as exc:  # metadata transfer is best-effort
@@ -91,9 +87,7 @@ class ProvenanceBuilder:
         self._whole_file_cache: Optional[Tuple[Dict[str, Any], Dict[str, Any]]] = None
 
     def _metadata_reader(self) -> BioImage:
-        """
-        The reader used to source provenance metadata, cached across scenes.
-        """
+        """The reader used to source provenance metadata, cached across scenes."""
         if self._metadata_bioimage is not None:
             return self._metadata_bioimage
 
@@ -189,9 +183,7 @@ class ProvenanceBuilder:
         self,
         scene_index: int,
     ) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
-        """
-        Derive provenance for a scene.
-        """
+        """Derive provenance for a scene."""
         meta = self._metadata_reader()
         meta.set_scene(self._scene_names[scene_index])
         try:
@@ -212,9 +204,7 @@ class ProvenanceBuilder:
 
 
 def write_sidecars(store_path: Path, sidecars: Dict[str, Any]) -> None:
-    """
-    Write metadata sidecar dicts.
-    """
+    """Write metadata sidecar dicts."""
     for rel_path, content in sidecars.items():
         try:
             sidecar_path = store_path / rel_path
