@@ -466,22 +466,19 @@ class OmeZarrConverter:
                 raise FileExistsError(f"{path} already exists.")
 
         # A single process pool spans *all* scenes
-        pool = (
-            ProcessPoolExecutor(max_workers=self._n_workers)
-            if self._n_workers > 1
-            else None
-        )
+        pool = ProcessPoolExecutor(max_workers=self._n_workers)
         futures: List[Any] = []
         try:
             for scene_index in self.scene_indices:
-                self._plan_and_dispatch_scene(
-                    scene_index, out_paths[scene_index], pool, futures
+                futures.extend(
+                    self._plan_and_dispatch_scene(
+                        scene_index, out_paths[scene_index], pool
+                    )
                 )
             for future in futures:
                 future.result()
         finally:
-            if pool is not None:
-                pool.shutdown()
+            pool.shutdown()
 
     def _output_base_for_scene(self, scene_index: int) -> str:
         """Sanitized output basename (no extension) for a scene's store.
@@ -502,12 +499,13 @@ class OmeZarrConverter:
         self,
         scene_index: int,
         out_path: str,
-        pool: Optional[ProcessPoolExecutor],
-        futures: List[Any],
-    ) -> None:
+        pool: ProcessPoolExecutor,
+    ) -> List[Any]:
         """
         Build one scene's store, initialize it, and dispatch its writes.
 
+        Returns the list of futures submitted to ``pool`` (empty when the
+        fallback single-threaded path is used).
         """
         bio = self.bioimage
         base = self._output_base_for_scene(scene_index)
@@ -552,42 +550,18 @@ class OmeZarrConverter:
             )
 
         # (4) Chunking + sharding
-        writer_shard_shape_param = self._writer_shard_shape
-
         can_auto_layout = (
             self._writer_zarr_format == 3
             and self._writer_chunk_shape is None
             and self._writer_shard_shape is None
             and ome_dims
         )
-
-        if self._writer_chunk_shape is not None:
-            writer_chunk_shape_param: Optional[
-                MultiResolutionShapeSpec
-            ] = self._writer_chunk_shape
-        elif can_auto_layout:
-            chunk_limit = self._helper_memory_target_bytes or DEFAULT_CHUNK_LIMIT_BYTES
-            level_shapes_list = self._ensure_per_level_shapes(writer_level_shapes_param)
-            auto_chunks, auto_shards = choose_pyramid_layout(
-                level_shapes=level_shapes_list,
-                dtype=self.output_dtype,
-                dims=dims,
-                chunk_limit_bytes=chunk_limit,
-                shard_limit_bytes=self._shard_limit_bytes,
-            )
-            writer_chunk_shape_param = auto_chunks
-            writer_shard_shape_param = auto_shards
-        elif self._helper_memory_target_bytes is not None:
-            # Normalize level shapes to per-level list for the helper
-            level_shapes_list = self._ensure_per_level_shapes(writer_level_shapes_param)
-            suggested = multiscale_chunk_size_from_memory_target(
-                level_shapes_list,
-                self.output_dtype,
-                self._helper_memory_target_bytes,
-            )
-            writer_chunk_shape_param = [tuple(map(int, s)) for s in suggested]
-        else:
-            writer_chunk_shape_param = None  # writer suggests per-level ~16 MiB
+        (
+            writer_chunk_shape_param,
+            writer_shard_shape_param,
+        ) = self._resolve_chunk_and_shard_params(
+            can_auto_layout, writer_level_shapes_param, dims
+        )
 
         # (5) Build writer kwargs
         writer_kwargs: Dict[str, Any] = {
@@ -627,10 +601,11 @@ class OmeZarrConverter:
         # ever read back to be merged (no read-modify-write).
         writer.initialize()
 
+        scene_futures: List[Any] = []
         if can_auto_layout:
             out_dtype_str = str(self.output_dtype)
             for src_bounds, dest_bounds in self._scene_shard_bounds(
-                auto_shards, level0_shape
+                writer_shard_shape_param, level0_shape
             ):
                 task = (
                     self.source,
@@ -641,13 +616,47 @@ class OmeZarrConverter:
                     src_bounds,
                     dest_bounds,
                 )
-                if pool is not None:
-                    futures.append(pool.submit(_write_shard_process, *task))
-                else:
-                    _write_shard_process(*task)
+                scene_futures.append(pool.submit(_write_shard_process, *task))
         else:
             t_ax = dims.index("T") if "t" in axis_names else None
             self._write_fallback(writer, r, native_order, t_ax, level0_shape)
+        return scene_futures
+
+    def _resolve_chunk_and_shard_params(
+        self,
+        can_auto_layout: bool,
+        writer_level_shapes_param: MultiResolutionShapeSpec,
+        dims: str,
+    ) -> Tuple[Optional[MultiResolutionShapeSpec], Optional[MultiResolutionShapeSpec]]:
+        """Return ``(chunk_shape_param, shard_shape_param)`` for the writer.
+
+        Prefers an explicit user-supplied chunk shape; falls back to auto-layout
+        via ``choose_pyramid_layout``, then memory-target heuristics, then
+        ``None`` (writer default).
+        """
+        shard_param = self._writer_shard_shape
+        if self._writer_chunk_shape is not None:
+            return self._writer_chunk_shape, shard_param
+        if can_auto_layout:
+            chunk_limit = self._helper_memory_target_bytes or DEFAULT_CHUNK_LIMIT_BYTES
+            level_shapes_list = self._ensure_per_level_shapes(writer_level_shapes_param)
+            auto_chunks, auto_shards = choose_pyramid_layout(
+                level_shapes=level_shapes_list,
+                dtype=self.output_dtype,
+                dims=dims,
+                chunk_limit_bytes=chunk_limit,
+                shard_limit_bytes=self._shard_limit_bytes,
+            )
+            return auto_chunks, auto_shards
+        if self._helper_memory_target_bytes is not None:
+            level_shapes_list = self._ensure_per_level_shapes(writer_level_shapes_param)
+            suggested = multiscale_chunk_size_from_memory_target(
+                level_shapes_list,
+                self.output_dtype,
+                self._helper_memory_target_bytes,
+            )
+            return [tuple(map(int, s)) for s in suggested], shard_param
+        return None, shard_param  # writer suggests per-level ~16 MiB
 
     def _scene_shard_bounds(
         self,
