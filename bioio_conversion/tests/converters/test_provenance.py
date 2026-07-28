@@ -7,6 +7,8 @@ from typing import Optional
 
 import pytest
 from bioio import BioImage
+from bioio_nd2 import Reader as ND2Reader
+from bioio_nd2.plates import PLATE_96
 
 from bioio_conversion.converters.ome_zarr_converter import OmeZarrConverter
 from bioio_conversion.provenance import _json_safe
@@ -51,6 +53,7 @@ def _root_attrs(store_path: pathlib.Path) -> dict:
         ("s_1_t_1_c_1_z_1.czi", "bioio-czi", 0),
         ("s_3_t_1_c_3_z_5.czi", "bioio-czi", 0),
         ("s_3_t_1_c_3_z_5.czi", "bioio-czi", 2),
+        ("ND2_dims_t3c2y32x32.nd2", "bioio-nd2", 0),
     ],
 )
 def test_provenance_attributes(
@@ -132,3 +135,29 @@ def test_czi_subblock_metadata_embedded(tmp_path: pathlib.Path) -> None:
     subblocks = native["ImageDocument"]["Subblocks"]["Subblock"]
     assert subblocks, "no Subblocks (aicspylibczi?)"
     assert all(isinstance(sb, dict) for sb in subblocks), "subblocks should be dicts"
+
+
+def test_nd2_provenance_use_plate_96(tmp_path: pathlib.Path) -> None:
+    """
+    use_plate_96=True via provenance_reader_kwargs should populate row/column
+    in standard_metadata with plate-derived values matching the reader directly.
+    """
+    src_name = "ND2_dims_p2z5t3-2c4y32x32.nd2"
+    src = str(LOCAL_RESOURCES_DIR / src_name)
+    _convert(
+        tmp_path,
+        src_name,
+        "out",
+        scenes=0,
+        provenance_reader_kwargs={"use_plate_96": True},
+    )
+
+    store = tmp_path / "out.ome.zarr"
+    sm = _root_attrs(store)["bioio"]["standard_metadata"]
+
+    ref = ND2Reader(src, plate=PLATE_96)
+    ref.set_scene(0)
+    assert sm["row"] is not None
+    assert sm["column"] is not None
+    assert sm["row"] == ref.row
+    assert sm["column"] == ref.column

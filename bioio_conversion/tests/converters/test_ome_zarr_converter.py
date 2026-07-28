@@ -28,6 +28,11 @@ _TEST_SHARD_LIMIT = 256 * 1024  # 256 KiB — used for integration tests
         # CZIs
         ("s_1_t_1_c_1_z_1.czi", 0, [0]),  # CYX
         ("s_3_t_1_c_3_z_5.czi", 0, [0]),  # CZYX
+        # ND2s
+        ("ND2_dims_c2y32x32.nd2", 0, [0]),  # CYX, single scene
+        ("ND2_dims_t3c2y32x32.nd2", 0, [0]),  # TCYX, single scene
+        ("ND2_dims_p2z5t3-2c4y32x32.nd2", 0, [0]),  # TZCYX, scene 0
+        ("ND2_dims_p2z5t3-2c4y32x32.nd2", 1, [1]),  # TZCYX, scene 1
     ],
     ids=[
         "tiff-1scene-idx0",
@@ -36,6 +41,10 @@ _TEST_SHARD_LIMIT = 256 * 1024  # 256 KiB — used for integration tests
         "tiff-3scene-all",
         "czi-cyx-idx0",
         "czi-czyx-idx0",
+        "nd2-cyx",
+        "nd2-tcyx",
+        "nd2-tzcyx-scene0",
+        "nd2-tzcyx-scene1",
     ],
 )
 def test_file_to_zarr_multi_scene(
