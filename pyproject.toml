@@ -30,12 +30,13 @@ dynamic = ["version"]
 dependencies = [
   "bioio>=3.0.0",
   "bioio-base>=3.4.0",
-  "bioio-ome-zarr>=3.5.1",
+  "bioio-ome-zarr>=3.6.0",
   "numpy>=1.24.0",
   "dask>=2021.10.0",
   "numcodecs>=0.10.0",
   "psutil>=5.8.0",
   "scikit-image>=0.19.0",
+  "xmltodict>=0.13.0",
 ]
 
 # Console script entry points
@@ -54,6 +55,7 @@ test = [
   "coverage>=5.1",
   "bioio-ome-tiff>=1.4.0",
   "bioio-czi>=2.8.0",
+  "bioio-nd2>=1.7.0",
   "pytest>=5.4.3",
   "pytest-cov>=2.9.0",
   "pytest-raises>=0.11",

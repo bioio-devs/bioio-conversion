@@ -17,6 +17,7 @@ from bioio_ome_zarr.writers.ome_zarr_writer import MultiResolutionShapeSpec
 from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_target
 from zarr.codecs import BloscCodec
 
+from ..provenance import ProvenanceBuilder, write_sidecars
 from ..sharding import (
     DEFAULT_CHUNK_LIMIT_BYTES,
     DEFAULT_SHARD_LIMIT_BYTES,
@@ -124,6 +125,8 @@ class OmeZarrConverter:
         dtype: Optional[Union[str, np.dtype]] = None,
         n_workers: Optional[int] = None,
         shard_limit_bytes: int = DEFAULT_SHARD_LIMIT_BYTES,
+        include_provenance: bool = False,
+        provenance_reader_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Initialize an OME-Zarr converter with flexible scene selection,
@@ -218,10 +221,19 @@ class OmeZarrConverter:
         n_workers : Optional[int]
             Number of worker *processes* for shard writes (auto-layout path).
             If ``None`` (default), derived from the cores actually available to
-            the process. One process per core,
-            floored at 1.
+            the process. One process per core, floored at 1.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
+        include_provenance : bool, default = False
+            When True, write source provenance for each scene into a top-level
+            ``"bioio_conversion"`` attributes block: the source's ``standard_metadata``,
+            the reader plugin and package versions, and the native/OME metadata
+            as JSON sidecars under ``bioio/``. Off by default; see
+            :class:`bioio_conversion.provenance.ProvenanceBuilder`.
+        provenance_reader_kwargs : dict, optional
+            Extra kwargs forwarded to ``BioImage`` when opening a dedicated
+            metadata reader for provenance. When ``None`` (default) the pixel
+            reader is reused as-is. Ignored when ``include_provenance=False``.
         """
         self.source = source
         self.destination = destination or str(Path.cwd())
@@ -277,6 +289,17 @@ class OmeZarrConverter:
         # not oversubscribe a partial node; it is floored at 1.
         self._n_workers = n_workers or _available_cores()
         self._shard_limit_bytes = shard_limit_bytes
+        # Provenance (the "bioio_conversion" attribute block + source-metadata sidecars)
+        self._provenance = (
+            ProvenanceBuilder(
+                self.source,
+                self.bioimage,
+                self.scene_names,
+                metadata_reader_kwargs=provenance_reader_kwargs,
+            )
+            if include_provenance
+            else None
+        )
 
     # -------------------------------------------------------------------------
     # Internal helpers
@@ -560,7 +583,15 @@ class OmeZarrConverter:
             if fs.exists(out_path):
                 raise FileExistsError(f"{out_path} already exists.")
 
-            # (6) Build writer kwargs
+            # (6) Build writer kwargs. Provenance ("bioio_conversion" attrs) is merged
+            # the root group's attributes by the writer during initialize(); the
+            # matching XML sidecars are written afterwards, once the store exists.
+            if self._provenance is not None:
+                bioio_attrs, bioio_sidecars = self._provenance.provenance_from_scene(
+                    scene_index
+                )
+            else:
+                bioio_attrs, bioio_sidecars = None, {}
             writer_kwargs: Dict[str, Any] = {
                 "store": out_path,
                 "level_shapes": writer_level_shapes_param,
@@ -581,6 +612,7 @@ class OmeZarrConverter:
                         "axes_types": self._writer_axes_types,
                         "axes_units": self._infer_axes_units(axis_names),
                         "physical_pixel_size": pps,
+                        "attributes": bioio_attrs,
                     }.items()
                     if v is not None
                 },
@@ -597,6 +629,10 @@ class OmeZarrConverter:
             # Every call covers exactly one shard boundary at every pyramid level
             # so no shard is ever read back to be merged (no read-modify-write).
             writer.initialize()
+
+            # Attach the source metadata XML sidecars under bioio/ now that the
+            # store exists (as json).
+            write_sidecars(Path(out_path), bioio_sidecars)
 
             if can_auto_layout:
                 self._write_auto_layout_shards(
