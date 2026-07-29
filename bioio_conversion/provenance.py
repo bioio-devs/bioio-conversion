@@ -13,6 +13,7 @@ from bioio import BioImage
 # Store-relative paths for the source metadata sidecars.
 NATIVE_METADATA_PATH = "metadata.native.json"
 OME_METADATA_PATH = "metadata.ome.json"
+STANDARD_METADATA_PATH = "standard_metadata.json"
 
 
 def _json_safe(value: Any) -> Any:
@@ -60,7 +61,7 @@ class ProvenanceBuilder:
         metadata_reader_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
-        Builds the ``"bioio"`` provenance attributes and XML sidecars.
+        Builds the ``"bioio_conversion"`` provenance attributes and XML sidecars.
 
         Parameters
         ----------
@@ -101,14 +102,6 @@ class ProvenanceBuilder:
             warnings.warn(
                 f"Could not open a dedicated {self._plugin} metadata reader, "
                 f"using the default reader for provenance: {exc}",
-                UserWarning,
-            )
-            return self._metadata_bioimage
-
-        if sorted(img.scenes) != sorted(self._scene_names):
-            warnings.warn(
-                f"{self._plugin} metadata reader disagrees with the default "
-                f"reader on scene names, using the default reader for provenance.",
                 UserWarning,
             )
             return self._metadata_bioimage
@@ -155,7 +148,7 @@ class ProvenanceBuilder:
         block: Dict[str, Any] = {
             "source_file": Path(self._source).name,
             "converted": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "bioio_python_versions": versions,
+            "bioio_package_versions": versions,
             "plugin": self._plugin,
         }
         sidecars: Dict[str, Any] = {}
@@ -185,7 +178,7 @@ class ProvenanceBuilder:
     ) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
         """Derive provenance for a scene."""
         meta = self._metadata_reader()
-        meta.set_scene(self._scene_names[scene_index])
+        meta.set_scene(scene_index)
         try:
             fields = {
                 k: _json_safe(v)
@@ -199,8 +192,10 @@ class ProvenanceBuilder:
             )
             return None, {}
 
-        base, sidecars = self._whole_file_provenance()
-        return {"bioio": {**base, "standard_metadata": fields}}, sidecars
+        base, whole_file_sidecars = self._whole_file_provenance()
+        sidecars = {**whole_file_sidecars, STANDARD_METADATA_PATH: fields}
+        block = {**base, "standard_metadata": STANDARD_METADATA_PATH}
+        return {"bioio_conversion": block}, sidecars
 
 
 def write_sidecars(store_path: Path, sidecars: Dict[str, Any]) -> None:

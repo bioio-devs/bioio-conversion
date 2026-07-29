@@ -226,7 +226,7 @@ class OmeZarrConverter:
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
         include_provenance : bool, default = False
             When True, write source provenance for each scene into a top-level
-            ``"bioio"`` attributes block: the source's ``standard_metadata``,
+            ``"bioio_conversion"`` attributes block: the source's ``standard_metadata``,
             the reader plugin and package versions, and the native/OME metadata
             as JSON sidecars under ``bioio/``. Off by default; see
             :class:`bioio_conversion.provenance.ProvenanceBuilder`.
@@ -583,7 +583,7 @@ class OmeZarrConverter:
             if fs.exists(out_path):
                 raise FileExistsError(f"{out_path} already exists.")
 
-            # (6) Build writer kwargs. Provenance ("bioio" attrs) is merged into
+            # (6) Build writer kwargs. Provenance ("bioio_conversion" attrs) is merged
             # the root group's attributes by the writer during initialize(); the
             # matching XML sidecars are written afterwards, once the store exists.
             if self._provenance is not None:
