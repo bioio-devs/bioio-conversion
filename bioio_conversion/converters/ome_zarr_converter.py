@@ -289,7 +289,7 @@ class OmeZarrConverter:
         # not oversubscribe a partial node; it is floored at 1.
         self._n_workers = n_workers or _available_cores()
         self._shard_limit_bytes = shard_limit_bytes
-        # Provenance (the "bioio" attribute block + source-metadata sidecars)
+        # Provenance (the "bioio_conversion" attribute block + source-metadata sidecars)
         self._provenance = (
             ProvenanceBuilder(
                 self.source,
