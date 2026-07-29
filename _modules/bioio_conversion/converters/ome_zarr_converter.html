@@ -254,6 +254,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">bioio_ome_zarr.writers.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">multiscale_chunk_size_from_memory_target</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">zarr.codecs</span><span class="w"> </span><span class="kn">import</span> <span class="n">BloscCodec</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">..provenance</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProvenanceBuilder</span><span class="p">,</span> <span class="n">write_sidecars</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">..sharding</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">DEFAULT_CHUNK_LIMIT_BYTES</span><span class="p">,</span>
     <span class="n">DEFAULT_SHARD_LIMIT_BYTES</span><span class="p">,</span>
@@ -365,6 +366,8 @@
         <span class="n">dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">dtype</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">n_workers</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">shard_limit_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_SHARD_LIMIT_BYTES</span><span class="p">,</span>
+        <span class="n">include_provenance</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">provenance_reader_kwargs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initialize an OME-Zarr converter with flexible scene selection,</span>
@@ -459,10 +462,19 @@
 <span class="sd">        n_workers : Optional[int]</span>
 <span class="sd">            Number of worker *processes* for shard writes (auto-layout path).</span>
 <span class="sd">            If ``None`` (default), derived from the cores actually available to</span>
-<span class="sd">            the process. One process per core,</span>
-<span class="sd">            floored at 1.</span>
+<span class="sd">            the process. One process per core, floored at 1.</span>
 <span class="sd">        shard_limit_bytes : int</span>
 <span class="sd">            Maximum uncompressed size of a level-0 shard. Default: 4 GiB.</span>
+<span class="sd">        include_provenance : bool, default = False</span>
+<span class="sd">            When True, write source provenance for each scene into a top-level</span>
+<span class="sd">            ``&quot;bioio_conversion&quot;`` attributes block: the source&#39;s ``standard_metadata``,</span>
+<span class="sd">            the reader plugin and package versions, and the native/OME metadata</span>
+<span class="sd">            as JSON sidecars under ``bioio/``. Off by default; see</span>
+<span class="sd">            :class:`bioio_conversion.provenance.ProvenanceBuilder`.</span>
+<span class="sd">        provenance_reader_kwargs : dict, optional</span>
+<span class="sd">            Extra kwargs forwarded to ``BioImage`` when opening a dedicated</span>
+<span class="sd">            metadata reader for provenance. When ``None`` (default) the pixel</span>
+<span class="sd">            reader is reused as-is. Ignored when ``include_provenance=False``.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">source</span> <span class="o">=</span> <span class="n">source</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">destination</span> <span class="o">=</span> <span class="n">destination</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="o">.</span><span class="n">cwd</span><span class="p">())</span>
@@ -517,7 +529,18 @@
         <span class="c1"># CPU work). _available_cores honors a cgroup/SLURM allocation so we do</span>
         <span class="c1"># not oversubscribe a partial node; it is floored at 1.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_n_workers</span> <span class="o">=</span> <span class="n">n_workers</span> <span class="ow">or</span> <span class="n">_available_cores</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_shard_limit_bytes</span> <span class="o">=</span> <span class="n">shard_limit_bytes</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_shard_limit_bytes</span> <span class="o">=</span> <span class="n">shard_limit_bytes</span>
+        <span class="c1"># Provenance (the &quot;bioio_conversion&quot; attribute block + source-metadata sidecars)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_provenance</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">ProvenanceBuilder</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">source</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">scene_names</span><span class="p">,</span>
+                <span class="n">metadata_reader_kwargs</span><span class="o">=</span><span class="n">provenance_reader_kwargs</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">include_provenance</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span></div>
 
 
     <span class="c1"># -------------------------------------------------------------------------</span>
@@ -804,7 +827,15 @@
             <span class="k">if</span> <span class="n">fs</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">out_path</span><span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">FileExistsError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">out_path</span><span class="si">}</span><span class="s2"> already exists.&quot;</span><span class="p">)</span>
 
-            <span class="c1"># (6) Build writer kwargs</span>
+            <span class="c1"># (6) Build writer kwargs. Provenance (&quot;bioio_conversion&quot; attrs) is merged</span>
+            <span class="c1"># the root group&#39;s attributes by the writer during initialize(); the</span>
+            <span class="c1"># matching XML sidecars are written afterwards, once the store exists.</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_provenance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">bioio_attrs</span><span class="p">,</span> <span class="n">bioio_sidecars</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_provenance</span><span class="o">.</span><span class="n">provenance_from_scene</span><span class="p">(</span>
+                    <span class="n">scene_index</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">bioio_attrs</span><span class="p">,</span> <span class="n">bioio_sidecars</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="p">{}</span>
             <span class="n">writer_kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
                 <span class="s2">&quot;store&quot;</span><span class="p">:</span> <span class="n">out_path</span><span class="p">,</span>
                 <span class="s2">&quot;level_shapes&quot;</span><span class="p">:</span> <span class="n">writer_level_shapes_param</span><span class="p">,</span>
@@ -825,6 +856,7 @@
                         <span class="s2">&quot;axes_types&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_axes_types</span><span class="p">,</span>
                         <span class="s2">&quot;axes_units&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_axes_units</span><span class="p">(</span><span class="n">axis_names</span><span class="p">),</span>
                         <span class="s2">&quot;physical_pixel_size&quot;</span><span class="p">:</span> <span class="n">pps</span><span class="p">,</span>
+                        <span class="s2">&quot;attributes&quot;</span><span class="p">:</span> <span class="n">bioio_attrs</span><span class="p">,</span>
                     <span class="p">}</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
                     <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                 <span class="p">},</span>
@@ -841,6 +873,10 @@
             <span class="c1"># Every call covers exactly one shard boundary at every pyramid level</span>
             <span class="c1"># so no shard is ever read back to be merged (no read-modify-write).</span>
             <span class="n">writer</span><span class="o">.</span><span class="n">initialize</span><span class="p">()</span>
+
+            <span class="c1"># Attach the source metadata XML sidecars under bioio/ now that the</span>
+            <span class="c1"># store exists (as json).</span>
+            <span class="n">write_sidecars</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_path</span><span class="p">),</span> <span class="n">bioio_sidecars</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="n">can_auto_layout</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_write_auto_layout_shards</span><span class="p">(</span>

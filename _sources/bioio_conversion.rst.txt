@@ -12,6 +12,14 @@ Subpackages
 Submodules
 ----------
 
+bioio\_conversion.provenance module
+-----------------------------------
+
+.. automodule:: bioio_conversion.provenance
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 bioio\_conversion.sharding module
 ---------------------------------
 
