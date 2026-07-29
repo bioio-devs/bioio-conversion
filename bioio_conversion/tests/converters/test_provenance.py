@@ -125,7 +125,7 @@ def test_metadata_json_sidecars(
     tmp_path: pathlib.Path, protocol: str, src_name: str, expected_sidecars: list
 ) -> None:
     """Native, OME, and standard metadata are written as JSON sidecars."""
-    destination = str(tmp_path) if protocol == "file" else f"memory://{tmp_path.name}"
+    destination = str(tmp_path) if protocol == "file" else "memory://" + tmp_path.name
     _convert(destination, src_name, "s")
     store = f"{destination}/s.ome.zarr"
     bioio = _provenance(store)
