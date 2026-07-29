@@ -10,7 +10,21 @@ from bioio import BioImage
 from bioio_nd2 import Reader as ND2Reader
 
 from bioio_conversion.converters.ome_zarr_converter import OmeZarrConverter
-from bioio_conversion.provenance import _json_safe
+from bioio_conversion.provenance import (
+    CONVERTED_KEY,
+    NATIVE_METADATA_KEY,
+    NATIVE_METADATA_PATH,
+    OME_METADATA_KEY,
+    OME_METADATA_PATH,
+    PACKAGE_VERSIONS_KEY,
+    PLUGIN_KEY,
+    PROVENANCE_ATTR_KEY,
+    SOURCE_FILE_KEY,
+    STANDARD_METADATA_KEY,
+    STANDARD_METADATA_PATH,
+    TRACKED_PACKAGES,
+    _json_safe,
+)
 
 from ..conftest import LOCAL_RESOURCES_DIR
 
@@ -43,6 +57,11 @@ def _root_attrs(store_path: pathlib.Path) -> dict:
         return json.load(fh)["attributes"]
 
 
+def _provenance(store_path: pathlib.Path) -> dict:
+    """The provenance block from a store's root attributes."""
+    return _root_attrs(store_path)[PROVENANCE_ATTR_KEY]
+
+
 @pytest.mark.parametrize(
     "src_name, plugin, scene_index",
     [
@@ -60,23 +79,17 @@ def test_provenance_attributes(
 ) -> None:
     _convert(tmp_path, src_name, "out", scenes=scene_index)
     attrs = _root_attrs(tmp_path / "out.ome.zarr")
-    assert "bioio_conversion" in attrs
-    bioio = attrs["bioio_conversion"]
+    assert PROVENANCE_ATTR_KEY in attrs
+    bioio = attrs[PROVENANCE_ATTR_KEY]
 
-    assert bioio["source_file"] == src_name
-    assert bioio["plugin"] == plugin
-    assert {
-        "bioio",
-        "bioio-base",
-        "bioio-ome-zarr",
-        "bioio-conversion",
-        plugin,
-    } <= set(bioio["bioio_package_versions"])
-    datetime.datetime.fromisoformat(bioio["converted"])
+    assert bioio[SOURCE_FILE_KEY] == src_name
+    assert bioio[PLUGIN_KEY] == plugin
+    assert {*TRACKED_PACKAGES, plugin} <= set(bioio[PACKAGE_VERSIONS_KEY])
+    datetime.datetime.fromisoformat(bioio[CONVERTED_KEY])
 
     store = tmp_path / "out.ome.zarr"
-    assert bioio["standard_metadata"] == "standard_metadata.json"
-    with open(store / bioio["standard_metadata"]) as fh:
+    assert bioio[STANDARD_METADATA_KEY] == STANDARD_METADATA_PATH
+    with open(store / bioio[STANDARD_METADATA_KEY]) as fh:
         sm = json.load(fh)
 
     src = str(LOCAL_RESOURCES_DIR / src_name)
@@ -94,11 +107,11 @@ def test_provenance_attributes(
     [
         (
             "s_1_t_1_c_1_z_1.czi",
-            ["metadata.native.json", "metadata.ome.json", "standard_metadata.json"],
+            [NATIVE_METADATA_PATH, OME_METADATA_PATH, STANDARD_METADATA_PATH],
         ),
         (
             "s_3_t_1_c_3_z_5.ome.tiff",
-            ["metadata.ome.json", "standard_metadata.json"],
+            [OME_METADATA_PATH, STANDARD_METADATA_PATH],
         ),
     ],
 )
@@ -108,25 +121,25 @@ def test_metadata_json_sidecars(
     """Native, OME, and standard metadata are written as JSON sidecars."""
     _convert(tmp_path, src_name, "s")
     store = tmp_path / "s.ome.zarr"
-    bioio = _root_attrs(store)["bioio_conversion"]
+    bioio = _provenance(store)
 
-    with open(store / bioio["source_metadata"]) as fh:
+    with open(store / bioio[NATIVE_METADATA_KEY]) as fh:
         native = json.load(fh)
-    with open(store / bioio["ome_metadata"]) as fh:
+    with open(store / bioio[OME_METADATA_KEY]) as fh:
         ome = json.load(fh)
-    with open(store / bioio["standard_metadata"]) as fh:
+    with open(store / bioio[STANDARD_METADATA_KEY]) as fh:
         standard = json.load(fh)
 
     assert isinstance(native, dict)
     assert isinstance(ome, dict)
     assert isinstance(standard, dict)
-    assert (bioio["source_metadata"] == bioio["ome_metadata"]) == (
+    assert (bioio[NATIVE_METADATA_KEY] == bioio[OME_METADATA_KEY]) == (
         len(expected_sidecars) == 2
     )
     sidecar_files = [
         f for f in os.listdir(store) if f.endswith(".json") and f != "zarr.json"
     ]
-    assert sorted(sidecar_files) == expected_sidecars
+    assert sorted(sidecar_files) == sorted(expected_sidecars)
 
 
 def test_czi_subblock_metadata_embedded(tmp_path: pathlib.Path) -> None:
@@ -144,7 +157,7 @@ def test_czi_subblock_metadata_embedded(tmp_path: pathlib.Path) -> None:
         },
     )
     store = tmp_path / "czi.ome.zarr"
-    with open(store / _root_attrs(store)["bioio_conversion"]["source_metadata"]) as fh:
+    with open(store / _provenance(store)[NATIVE_METADATA_KEY]) as fh:
         native = json.load(fh)
     subblocks = native["ImageDocument"]["Subblocks"]["Subblock"]
     assert subblocks, "no Subblocks (aicspylibczi?)"
@@ -167,8 +180,8 @@ def test_nd2_provenance_use_plate_96(tmp_path: pathlib.Path) -> None:
     )
 
     store = tmp_path / "out.ome.zarr"
-    bioio = _root_attrs(store)["bioio_conversion"]
-    with open(store / bioio["standard_metadata"]) as fh:
+    bioio = _provenance(store)
+    with open(store / bioio[STANDARD_METADATA_KEY]) as fh:
         sm = json.load(fh)
 
     ref = ND2Reader(src, plate="96")

@@ -10,10 +10,27 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import xmltodict
 from bioio import BioImage
 
+# Root attributes key holding the provenance block.
+PROVENANCE_ATTR_KEY = "bioio_conversion"
+
 # Store-relative paths for the source metadata sidecars.
 NATIVE_METADATA_PATH = "metadata.native.json"
 OME_METADATA_PATH = "metadata.ome.json"
 STANDARD_METADATA_PATH = "standard_metadata.json"
+
+# Provenance-block keys pointing at each sidecar above.
+NATIVE_METADATA_KEY = "source_metadata"
+OME_METADATA_KEY = "ome_metadata"
+STANDARD_METADATA_KEY = "standard_metadata"
+
+# Remaining provenance-block field keys.
+SOURCE_FILE_KEY = "source_file"
+CONVERTED_KEY = "converted"
+PACKAGE_VERSIONS_KEY = "bioio_package_versions"
+PLUGIN_KEY = "plugin"
+
+# Packages whose versions are always recorded, alongside the reader plugin.
+TRACKED_PACKAGES = ("bioio", "bioio-base", "bioio-ome-zarr", "bioio-conversion")
 
 
 def _json_safe(value: Any) -> Any:
@@ -134,22 +151,16 @@ class ProvenanceBuilder:
             return self._whole_file_cache
 
         versions: Dict[str, str] = {}
-        for name in (
-            "bioio",
-            "bioio-base",
-            "bioio-ome-zarr",
-            "bioio-conversion",
-            self._plugin,
-        ):
+        for name in (*TRACKED_PACKAGES, self._plugin):
             version = _package_version(name)
             if version is not None:
                 versions[name] = version
 
         block: Dict[str, Any] = {
-            "source_file": Path(self._source).name,
-            "converted": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "bioio_package_versions": versions,
-            "plugin": self._plugin,
+            SOURCE_FILE_KEY: Path(self._source).name,
+            CONVERTED_KEY: datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            PACKAGE_VERSIONS_KEY: versions,
+            PLUGIN_KEY: self._plugin,
         }
         sidecars: Dict[str, Any] = {}
 
@@ -166,8 +177,8 @@ class ProvenanceBuilder:
             sidecars[path] = content
 
         ome_dict, native_dict = self._metadata_dicts()
-        attach("ome_metadata", OME_METADATA_PATH, ome_dict)
-        attach("source_metadata", NATIVE_METADATA_PATH, native_dict)
+        attach(OME_METADATA_KEY, OME_METADATA_PATH, ome_dict)
+        attach(NATIVE_METADATA_KEY, NATIVE_METADATA_PATH, native_dict)
 
         self._whole_file_cache = (block, sidecars)
         return self._whole_file_cache
@@ -186,16 +197,16 @@ class ProvenanceBuilder:
             }
         except Exception as exc:
             warnings.warn(
-                f"Could not read standard_metadata, omitting 'bioio' "
-                f"attributes: {exc}",
+                f"Could not read standard_metadata, omitting "
+                f"{PROVENANCE_ATTR_KEY!r} attributes: {exc}",
                 UserWarning,
             )
             return None, {}
 
         base, whole_file_sidecars = self._whole_file_provenance()
         sidecars = {**whole_file_sidecars, STANDARD_METADATA_PATH: fields}
-        block = {**base, "standard_metadata": STANDARD_METADATA_PATH}
-        return {"bioio_conversion": block}, sidecars
+        block = {**base, STANDARD_METADATA_KEY: STANDARD_METADATA_PATH}
+        return {PROVENANCE_ATTR_KEY: block}, sidecars
 
 
 def write_sidecars(store_path: Path, sidecars: Dict[str, Any]) -> None:
