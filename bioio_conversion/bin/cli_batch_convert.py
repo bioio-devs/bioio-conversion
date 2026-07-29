@@ -98,6 +98,11 @@ def main(
       # List mode
       bioio-batch-convert --mode list --paths a.ome.tiff b.ome.tiff \\
           --destination out
+
+    \b
+      # Provenance for every job in the batch
+      bioio-batch-convert --mode dir --directory data --destination out \\
+          --include-provenance
     """
     try:
         init_opts_typed = build_ome_zarr_init_opts(**kwargs)
