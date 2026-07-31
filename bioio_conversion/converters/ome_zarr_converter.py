@@ -219,9 +219,8 @@ class OmeZarrConverter:
         dtype : Optional[Union[str, np.dtype]]
             Override output data type; defaults to the reader’s dtype.
         n_workers : Optional[int]
-            Number of worker *processes* for shard writes (auto-layout path).
-            If ``None`` (default), derived from the cores actually available to
-            the process. One process per core, floored at 1.
+            Number of worker processes for shard writes (auto-layout path).
+            Defaults to the number of CPU cores available to the process.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
         include_provenance : bool, default = False
@@ -390,8 +389,7 @@ class OmeZarrConverter:
     ) -> Tuple[List[str], Tuple[int, ...]]:
         """
         Use BioImage.reader (the actual format plugin) to discover true
-        axis order & shape. This reflects CYX, CZYX, TCZYX, etc., without
-        padding.
+        axis order & shape. This reflects CYX, CZYX, TCZYX, etc.
         """
         self.bioimage.set_scene(scene_index)
         r = self.bioimage.reader
@@ -408,7 +406,7 @@ class OmeZarrConverter:
         """
         return tuple(max(1, int(round(d * f))) for d, f in zip(base_shape, factors))
 
-    def _build_level_shapes_simple(
+    def _build_pyramid_shapes_simple(
         self,
         axis_names: List[str],
         level0_shape: Tuple[int, ...],
@@ -508,16 +506,15 @@ class OmeZarrConverter:
         """Sanitized output basename (no extension) for a scene's store.
 
         Single-scene conversions use the base name as-is; multi-scene runs
-        suffix each store with the scene name. Characters illegal in filenames
-        are replaced with ``_``.
+        suffix each store with the scene name.
         """
         scene_name = self.scene_names[scene_index]
-        base = (
+        basename = (
             self.output_basename
             if len(self.scene_indices) == 1
             else f"{self.output_basename}_{scene_name}"
         )
-        return re.sub(r"[<>:\"/\\|?*]", "_", base)
+        return re.sub(r"[<>:\"/\\|?*]", "_", basename)
 
     def _plan_and_dispatch_scene(
         self,
@@ -540,12 +537,12 @@ class OmeZarrConverter:
         # (2) Channels
         r = bio.reader
         ccount = int(getattr(r.dims, "C", 1)) if "c" in axis_names else 0
-        channel_models = self._resolve_channels(axis_names, ccount)
+        channels = self._resolve_channels(axis_names, ccount)
         pps = self._infer_physical_pixel_sizes(axis_names)
 
         dims = "".join(ax.upper() for ax in axis_names)
 
-        # True when dims are a subset of TCZYX with Y and X present.
+        # True when Y and X are present and all dims fit within TCZYX.ß
         ome_dims = (
             {
                 DimensionNames.SpatialY,
@@ -568,7 +565,7 @@ class OmeZarrConverter:
             # v3 default: auto-generate pyramid levels down to atlas fit.
             writer_level_shapes_param = build_pyramid_shapes(level0_shape, dims)
         else:
-            derived = self._build_level_shapes_simple(axis_names, level0_shape)
+            derived = self._build_pyramid_shapes_simple(axis_names, level0_shape)
             writer_level_shapes_param = (
                 derived if derived is not None else tuple(level0_shape)
             )
@@ -587,8 +584,7 @@ class OmeZarrConverter:
             can_auto_layout, writer_level_shapes_param, dims
         )
 
-        # (5) Build writer kwargs. Provenance attrs are merged into the root
-        # group by the writer during initialize(); sidecars are written after.
+        # (5) Build writer kwargs
         if self._provenance is not None:
             bioio_attrs, bioio_sidecars = self._provenance.provenance_from_scene(
                 scene_index
@@ -607,7 +603,7 @@ class OmeZarrConverter:
                     "compressor": self._writer_compressor,
                     "zarr_format": self._writer_zarr_format,
                     "image_name": (self._writer_image_name or base),
-                    "channels": channel_models,
+                    "channels": channels,
                     "rdefs": self._writer_rdefs,
                     "creator_info": self._writer_creator_info,
                     "root_transform": self._writer_root_transform,
@@ -623,14 +619,13 @@ class OmeZarrConverter:
 
         writer = OMEZarrWriter(**writer_kwargs)
 
-        # (6) Read pixels directly from the reader in its native order
+        # (6) Read pixels from the reader in its native axis order
         bio.set_scene(scene_index)
         r = bio.reader
         native_order = r.dims.order.upper()
 
-        # (7) Write — shard-aligned region writes via write_region. Every call
-        # covers exactly one shard boundary at every pyramid level so no shard is
-        # ever read back to be merged (no read-modify-write).
+        # (7) Write — each call covers exactly one shard boundary at every
+        # pyramid level, so shards can be written in any order independently.
         writer.initialize()
         write_sidecars(Path(out_path), bioio_sidecars)
 
@@ -670,7 +665,7 @@ class OmeZarrConverter:
         shard_param = self._writer_shard_shape
         if self._writer_chunk_shape is not None:
             return self._writer_chunk_shape, shard_param
-        if can_auto_layout:
+        elif can_auto_layout:
             chunk_limit = self._helper_memory_target_bytes or DEFAULT_CHUNK_LIMIT_BYTES
             level_shapes_list = self._ensure_per_level_shapes(writer_level_shapes_param)
             auto_chunks, auto_shards = choose_pyramid_layout(
@@ -681,7 +676,7 @@ class OmeZarrConverter:
                 shard_limit_bytes=self._shard_limit_bytes,
             )
             return auto_chunks, auto_shards
-        if self._helper_memory_target_bytes is not None:
+        elif self._helper_memory_target_bytes is not None:
             level_shapes_list = self._ensure_per_level_shapes(writer_level_shapes_param)
             suggested = multiscale_chunk_size_from_memory_target(
                 level_shapes_list,
@@ -689,7 +684,8 @@ class OmeZarrConverter:
                 self._helper_memory_target_bytes,
             )
             return [tuple(map(int, s)) for s in suggested], shard_param
-        return None, shard_param  # writer suggests per-level ~16 MiB
+        else:
+            return None, shard_param  # writer suggests per-level ~16 MiB
 
     def _scene_shard_bounds(
         self,
