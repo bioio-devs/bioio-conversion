@@ -623,10 +623,8 @@ def ome_zarr_options(
                 type=JsonDictType(),
                 default=None,
                 help=(
-                    "JSON object of extra kwargs for the reader opened to "
-                    "collect provenance metadata, for use when richer metadata "
-                    "needs different reader settings than the pixel read. "
-                    'Example: \'{"plate": "96"}\'. Requires '
+                    "JSON object of extra kwargs for the provenance metadata "
+                    'reader. Example: \'{"plate": "96"}\'. Requires '
                     "--include-provenance."
                 ),
             ),
