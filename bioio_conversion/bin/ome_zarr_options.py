@@ -268,7 +268,6 @@ class JsonDictType(click.ParamType):
             parsed = json.loads(str(value))
         except json.JSONDecodeError as exc:
             self.fail(f"{value!r} is not valid JSON ({exc}).", param, ctx)
-            raise
 
         if not isinstance(parsed, dict):
             message = (
