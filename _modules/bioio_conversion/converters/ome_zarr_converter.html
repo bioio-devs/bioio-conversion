@@ -876,7 +876,7 @@
 
             <span class="c1"># Attach the source metadata XML sidecars under bioio/ now that the</span>
             <span class="c1"># store exists (as json).</span>
-            <span class="n">write_sidecars</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">out_path</span><span class="p">),</span> <span class="n">bioio_sidecars</span><span class="p">)</span>
+            <span class="n">write_sidecars</span><span class="p">(</span><span class="n">out_path</span><span class="p">,</span> <span class="n">bioio_sidecars</span><span class="p">)</span>
 
             <span class="k">if</span> <span class="n">can_auto_layout</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_write_auto_layout_shards</span><span class="p">(</span>

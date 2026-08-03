@@ -549,6 +549,26 @@ Example: <code class="docutils literal notranslate"><span class="pre">&quot;#000
 <code class="docutils literal notranslate"><span class="pre">--channel-window-start</span></code>, <code class="docutils literal notranslate"><span class="pre">--channel-window-end</span></code>: per-channel windowing
 values. Only used when any window value is provided.</p></li>
 </ul>
+<p><strong>Provenance options</strong></p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">--include-provenance</span></code>: record where each store came from. Writes a
+top-level <code class="docutils literal notranslate"><span class="pre">bioio_conversion</span></code> attributes block (source file name, reader
+plugin, package versions, conversion timestamp) plus the source’s
+<code class="docutils literal notranslate"><span class="pre">standard_metadata</span></code>, OME and native metadata as JSON sidecars inside the
+store. Off by default.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--provenance-reader-kwargs</span></code>: JSON object of extra kwargs for the reader
+opened to collect that metadata. Use it when richer metadata needs
+different reader settings than the pixel read. Requires
+<code class="docutils literal notranslate"><span class="pre">--include-provenance</span></code>.</p>
+<ul class="simple">
+<li><p>Example: <code class="docutils literal notranslate"><span class="pre">--provenance-reader-kwargs</span> <span class="pre">'{&quot;plate&quot;:</span> <span class="pre">&quot;96&quot;}'</span></code> to let the ND2
+reader derive well row/column from a 96-well plate layout.</p></li>
+<li><p>Example: <code class="docutils literal notranslate"><span class="pre">--provenance-reader-kwargs</span> <span class="pre">'{&quot;use_aicspylibczi&quot;:</span> <span class="pre">true,</span> <span class="pre">&quot;include_subblock_metadata&quot;:</span> <span class="pre">true}'</span></code> to embed per-subblock CZI metadata.</p></li>
+</ul>
+<p>The value is JSON so kwarg types survive intact — <code class="docutils literal notranslate"><span class="pre">&quot;96&quot;</span></code> stays a string and
+<code class="docutils literal notranslate"><span class="pre">true</span></code> becomes a bool, rather than both arriving as text.</p>
+</li>
+</ul>
 <p><strong>Axis metadata options</strong></p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">--axes-names</span></code>: comma-separated axis names in native axis order.
@@ -615,6 +635,16 @@ Example for <code class="docutils literal notranslate"><span class="pre">(t,c,z,
 <p><strong>Physical pixel sizes</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>image.tif<span class="w"> </span>-d<span class="w"> </span>out_dir<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--physical-pixel-sizes<span class="w"> </span><span class="m">1</span>.0,1.0,0.4,0.108,0.108
+</pre></div>
+</div>
+<p><strong>Provenance</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>sample.czi<span class="w"> </span>-d<span class="w"> </span>out_dir<span class="w"> </span>--include-provenance
+</pre></div>
+</div>
+<p><strong>Provenance with extra reader kwargs</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>plate.nd2<span class="w"> </span>-d<span class="w"> </span>out_dir<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--include-provenance<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--provenance-reader-kwargs<span class="w"> </span><span class="s1">&#39;{&quot;plate&quot;: &quot;96&quot;}&#39;</span>
 </pre></div>
 </div>
 </section>
