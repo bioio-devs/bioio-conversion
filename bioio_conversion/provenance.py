@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
+import fsspec
 import xmltodict
 from bioio import BioImage
 
@@ -209,13 +210,16 @@ class ProvenanceBuilder:
         return {PROVENANCE_ATTR_KEY: block}, sidecars
 
 
-def write_sidecars(store_path: Path, sidecars: Dict[str, Any]) -> None:
-    """Write metadata sidecar dicts."""
+def write_sidecars(store_path: str, sidecars: Dict[str, Any]) -> None:
+    """Write metadata sidecar dicts into the store."""
+    fs, root = fsspec.core.url_to_fs(str(store_path))
     for rel_path, content in sidecars.items():
         try:
-            sidecar_path = store_path / rel_path
-            sidecar_path.parent.mkdir(parents=True, exist_ok=True)
-            sidecar_path.write_text(json.dumps(content), encoding="utf-8")
+            sidecar_path = f"{root.rstrip('/')}/{rel_path}"
+            parent = sidecar_path.rsplit("/", 1)[0]
+            fs.makedirs(parent, exist_ok=True)
+            with fs.open(sidecar_path, "w") as handle:
+                handle.write(json.dumps(content))
         except Exception as exc:
             warnings.warn(
                 f"Could not write metadata sidecar {rel_path!r}: {exc}",
