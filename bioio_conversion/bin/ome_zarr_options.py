@@ -268,7 +268,7 @@ class JsonDictType(click.ParamType):
             parsed = json.loads(str(value))
         except json.JSONDecodeError as exc:
             self.fail(f"{value!r} is not valid JSON ({exc}).", param, ctx)
-            raise AssertionError("unreachable")
+            raise
 
         if not isinstance(parsed, dict):
             message = (
@@ -276,7 +276,6 @@ class JsonDictType(click.ParamType):
                 '\'{"plate": "96"}\'.'
             )
             self.fail(message, param, ctx)
-            raise AssertionError("unreachable")
 
         return parsed
 
