@@ -542,7 +542,7 @@ class OmeZarrConverter:
 
         dims = "".join(ax.upper() for ax in axis_names)
 
-        # True when Y and X are present and all dims fit within TCZYX.ß
+        # True when Y and X are present and all dims fit within TCZYX.
         ome_dims = (
             {
                 DimensionNames.SpatialY,
