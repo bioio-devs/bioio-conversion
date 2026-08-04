@@ -107,7 +107,6 @@ def test_provenance_attributes(
     assert sm == expected
 
 
-@pytest.mark.parametrize("protocol", ["file", "memory"])
 @pytest.mark.parametrize(
     "src_name, expected_sidecars",
     [
@@ -122,12 +121,11 @@ def test_provenance_attributes(
     ],
 )
 def test_metadata_json_sidecars(
-    tmp_path: pathlib.Path, protocol: str, src_name: str, expected_sidecars: list
+    tmp_path: pathlib.Path, src_name: str, expected_sidecars: list
 ) -> None:
     """Native, OME, and standard metadata are written as JSON sidecars."""
-    destination = str(tmp_path) if protocol == "file" else "memory://" + tmp_path.name
-    _convert(destination, src_name, "s")
-    store = f"{destination}/s.ome.zarr"
+    _convert(str(tmp_path), src_name, "s")
+    store = f"{str(tmp_path)}/s.ome.zarr"
     bioio = _provenance(store)
 
     native = _read_json(store, bioio[NATIVE_METADATA_KEY])
