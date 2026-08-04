@@ -34,8 +34,25 @@ def main(source: str, **kwargs: Any) -> None:
           --num-levels 3 \\
           --downsample-z \\
           --chunk-shape 1,1,16,256,256
+
+    \b
+      # Recording provenance, with extra kwargs for the metadata reader
+      bioio-convert plate.nd2 \\
+          --destination out_dir \\
+          --include-provenance \\
+          --provenance-reader-kwargs '{"plate": "96"}'
     """
     try:
+        if (
+            kwargs.get("provenance_reader_kwargs") is not None
+            and not kwargs["include_provenance"]
+        ):
+            raise click.UsageError(
+                "--provenance-reader-kwargs requires --include-provenance; "
+                "without it no provenance is collected and the kwargs would "
+                "be silently ignored."
+            )
+
         init_opts = build_ome_zarr_init_opts(**kwargs)
         OmeZarrConverter(source=source, **init_opts).convert()
 

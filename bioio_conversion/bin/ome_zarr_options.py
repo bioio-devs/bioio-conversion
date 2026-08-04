@@ -1,3 +1,4 @@
+import json
 from typing import (
     Any,
     Callable,
@@ -49,6 +50,10 @@ class OmeZarrInitOptions(TypedDict, total=False):
     channels: List[Channel]
     physical_pixel_size: List[float]
     zarr_format: int
+
+    # provenance
+    include_provenance: bool
+    provenance_reader_kwargs: Dict[str, Any]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -243,6 +248,35 @@ class OptionalStrListType(click.ParamType):
         for p in parts:
             out.append(None if p.lower() in self.NONE_TOKENS else p)
         return out
+
+
+class JsonDictType(click.ParamType):
+    """
+    Parse a JSON object into a dict:
+      '{"plate": "96"}' -> {"plate": "96"}
+    """
+
+    name = "json_dict"
+
+    def convert(
+        self,
+        value: Any,
+        param: Parameter,
+        ctx: Context,
+    ) -> Dict[str, Any]:
+        try:
+            parsed = json.loads(str(value))
+        except json.JSONDecodeError as exc:
+            self.fail(f"{value!r} is not valid JSON ({exc}).", param, ctx)
+
+        if not isinstance(parsed, dict):
+            message = (
+                f"{value!r} must be a JSON object of reader kwargs, for example "
+                '\'{"plate": "96"}\'.'
+            )
+            self.fail(message, param, ctx)
+
+        return parsed
 
 
 def _get(
@@ -571,6 +605,29 @@ def ome_zarr_options(
                     "provided, overrides --num-levels and --downsample-z."
                 ),
             ),
+            # ── Provenance ────────────────────────────────────────────────
+            click.option(
+                "--include-provenance",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Record source provenance in each store: a top-level "
+                    "'bioio_conversion' attributes block naming the source "
+                    "file, reader plugin, package versions and conversion "
+                    "time, plus the source's standard, OME and native "
+                    "metadata as JSON sidecars. Off by default."
+                ),
+            ),
+            click.option(
+                "--provenance-reader-kwargs",
+                type=JsonDictType(),
+                default=None,
+                help=(
+                    "JSON object of extra kwargs for the provenance metadata "
+                    'reader. Example: \'{"plate": "96"}\'. Requires '
+                    "--include-provenance."
+                ),
+            ),
             # ── Job slicing / scene selection ─────────────────────────────
             click.option(
                 "--tbatch",
@@ -712,6 +769,12 @@ def build_ome_zarr_init_opts(**kwargs: Any) -> OmeZarrInitOptions:
             w_start=kwargs.get("channel_window_start"),
             w_end=kwargs.get("channel_window_end"),
         )
+
+    # Provenance
+    if kwargs.get("include_provenance"):
+        init_opts["include_provenance"] = True
+    if kwargs.get("provenance_reader_kwargs") is not None:
+        init_opts["provenance_reader_kwargs"] = kwargs["provenance_reader_kwargs"]
 
     # Axes
     if kwargs.get("axes_names") is not None:

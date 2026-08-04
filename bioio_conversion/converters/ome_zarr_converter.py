@@ -627,7 +627,7 @@ class OmeZarrConverter:
         # (7) Write — each call covers exactly one shard boundary at every
         # pyramid level, so shards can be written in any order independently.
         writer.initialize()
-        write_sidecars(Path(out_path), bioio_sidecars)
+        write_sidecars(out_path, bioio_sidecars)
 
         scene_futures: List[Any] = []
         if can_auto_layout:

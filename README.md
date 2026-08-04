@@ -305,6 +305,26 @@ align by channel index.
   `--channel-window-start`, `--channel-window-end`: per-channel windowing
   values. Only used when any window value is provided.
 
+**Provenance options**
+
+* `--include-provenance`: record where each store came from. Writes a
+  top-level `bioio_conversion` attributes block (source file name, reader
+  plugin, package versions, conversion timestamp) plus the source's
+  `standard_metadata`, OME and native metadata as JSON sidecars inside the
+  store. Off by default.
+* `--provenance-reader-kwargs`: JSON object of extra kwargs for the reader
+  opened to collect that metadata. Use it when richer metadata needs
+  different reader settings than the pixel read. Requires
+  `--include-provenance`.
+
+  * Example: `--provenance-reader-kwargs '{"plate": "96"}'` to let the ND2
+    reader derive well row/column from a 96-well plate layout.
+  * Example: `--provenance-reader-kwargs '{"use_aicspylibczi": true,
+    "include_subblock_metadata": true}'` to embed per-subblock CZI metadata.
+
+  The value is JSON so kwarg types survive intact — `"96"` stays a string and
+  `true` becomes a bool, rather than both arriving as text.
+
 **Axis metadata options**
 
 * `--axes-names`: comma-separated axis names in native axis order.
@@ -392,6 +412,20 @@ bioio-convert image_tczyx.tif -d out_axes \
 ```bash
 bioio-convert image.tif -d out_dir \
   --physical-pixel-sizes 1.0,1.0,0.4,0.108,0.108
+```
+
+**Provenance**
+
+```bash
+bioio-convert sample.czi -d out_dir --include-provenance
+```
+
+**Provenance with extra reader kwargs**
+
+```bash
+bioio-convert plate.nd2 -d out_dir \
+  --include-provenance \
+  --provenance-reader-kwargs '{"plate": "96"}'
 ```
 
 ---
