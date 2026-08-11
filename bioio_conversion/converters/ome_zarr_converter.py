@@ -34,7 +34,7 @@ DEFAULT_ZARR_FORMAT = 3
 def _available_cores() -> int:
     """Number of cores the current process may actually run on.
 
-    Prefer the process's CPU affinity, which reflects the cores granted by a
+    Prefer the converter's CPU affinity, which reflects the cores granted by a
     cgroup/cpuset (e.g. a SLURM ``--cpus-per-task`` allocation) rather than the
     node's total hardware. ``cpu_affinity`` is unavailable on platforms without
     an affinity API (notably macOS), where it raises ``AttributeError``; there
@@ -220,7 +220,7 @@ class OmeZarrConverter:
             Override output data type; defaults to the reader’s dtype.
         n_workers : Optional[int]
             Number of worker processes for shard writes (auto-layout path).
-            Defaults to the number of CPU cores available to the process.
+            Defaults to the number of CPU cores available to the converter.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
         include_provenance : bool, default = False
@@ -478,7 +478,7 @@ class OmeZarrConverter:
         is_local = fsspec.utils.get_protocol(self.destination) == "file"
         out_paths: Dict[int, str] = {}
         for idx in self.scene_indices:
-            base = self._output_base_for_scene(idx)
+            base = self._output_file_basename_for_scene(idx)
             if is_local:
                 out_paths[idx] = str(Path(self.destination) / f"{base}.ome.zarr")
             else:
@@ -502,7 +502,7 @@ class OmeZarrConverter:
         finally:
             pool.shutdown()
 
-    def _output_base_for_scene(self, scene_index: int) -> str:
+    def _output_file_basename_for_scene(self, scene_index: int) -> str:
         """Sanitized output basename (no extension) for a scene's store.
 
         Single-scene conversions use the base name as-is; multi-scene runs
@@ -529,7 +529,7 @@ class OmeZarrConverter:
         fallback single-threaded path is used).
         """
         bio = self.bioimage
-        base = self._output_base_for_scene(scene_index)
+        base = self._output_file_basename_for_scene(scene_index)
 
         # (1) Discover native axes/shape from the active reader
         axis_names, level0_shape = self._native_axes_and_shape_for_scene(scene_index)
