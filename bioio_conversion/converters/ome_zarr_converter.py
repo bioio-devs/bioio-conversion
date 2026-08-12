@@ -34,7 +34,7 @@ DEFAULT_ZARR_FORMAT = 3
 def _available_cores() -> int:
     """Number of cores the current process may actually run on.
 
-    Prefer the process's CPU affinity, which reflects the cores granted by a
+    Prefer the converter's CPU affinity, which reflects the cores granted by a
     cgroup/cpuset (e.g. a SLURM ``--cpus-per-task`` allocation) rather than the
     node's total hardware. ``cpu_affinity`` is unavailable on platforms without
     an affinity API (notably macOS), where it raises ``AttributeError``; there
@@ -219,9 +219,8 @@ class OmeZarrConverter:
         dtype : Optional[Union[str, np.dtype]]
             Override output data type; defaults to the reader’s dtype.
         n_workers : Optional[int]
-            Number of worker *processes* for shard writes (auto-layout path).
-            If ``None`` (default), derived from the cores actually available to
-            the process. One process per core, floored at 1.
+            Number of worker processes for shard writes (auto-layout path).
+            Defaults to the number of CPU cores available to the converter.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
         include_provenance : bool, default = False
@@ -390,8 +389,7 @@ class OmeZarrConverter:
     ) -> Tuple[List[str], Tuple[int, ...]]:
         """
         Use BioImage.reader (the actual format plugin) to discover true
-        axis order & shape. This reflects CYX, CZYX, TCZYX, etc., without
-        padding.
+        axis order & shape. This reflects CYX, CZYX, TCZYX, etc.
         """
         self.bioimage.set_scene(scene_index)
         r = self.bioimage.reader
@@ -408,7 +406,7 @@ class OmeZarrConverter:
         """
         return tuple(max(1, int(round(d * f))) for d, f in zip(base_shape, factors))
 
-    def _build_level_shapes_simple(
+    def _build_pyramid_shapes_simple(
         self,
         axis_names: List[str],
         level0_shape: Tuple[int, ...],
@@ -476,187 +474,229 @@ class OmeZarrConverter:
                     UserWarning,
                 )
 
+        fs, _ = fsspec.core.url_to_fs(self.destination)
+        is_local = fsspec.utils.get_protocol(self.destination) == "file"
+        out_paths: Dict[int, str] = {}
+        for idx in self.scene_indices:
+            base = self._output_file_basename_for_scene(idx)
+            if is_local:
+                out_paths[idx] = str(Path(self.destination) / f"{base}.ome.zarr")
+            else:
+                out_paths[idx] = self.destination.rstrip("/") + f"/{base}.ome.zarr"
+        for path in out_paths.values():
+            if fs.exists(path):
+                raise FileExistsError(f"{path} already exists.")
+
+        # A single process pool spans *all* scenes
+        pool = ProcessPoolExecutor(max_workers=self._n_workers)
+        futures: List[Any] = []
+        try:
+            for scene_index in self.scene_indices:
+                futures.extend(
+                    self._plan_and_dispatch_scene(
+                        scene_index, out_paths[scene_index], pool
+                    )
+                )
+            for future in futures:
+                future.result()
+        finally:
+            pool.shutdown()
+
+    def _output_file_basename_for_scene(self, scene_index: int) -> str:
+        """Sanitized output basename (no extension) for a scene's store.
+
+        Single-scene conversions use the base name as-is; multi-scene runs
+        suffix each store with the scene name.
+        """
+        scene_name = self.scene_names[scene_index]
+        basename = (
+            self.output_basename
+            if len(self.scene_indices) == 1
+            else f"{self.output_basename}_{scene_name}"
+        )
+        return re.sub(r"[<>:\"/\\|?*]", "_", basename)
+
+    def _plan_and_dispatch_scene(
+        self,
+        scene_index: int,
+        out_path: str,
+        pool: ProcessPoolExecutor,
+    ) -> List[Any]:
+        """
+        Build one scene's store, initialize it, and dispatch its writes.
+
+        Returns the list of futures submitted to ``pool`` (empty when the
+        fallback single-threaded path is used).
+        """
         bio = self.bioimage
-        for scene_index in self.scene_indices:
-            # (1) Discover native axes/shape from the active reader
-            axis_names, level0_shape = self._native_axes_and_shape_for_scene(
+        base = self._output_file_basename_for_scene(scene_index)
+
+        # (1) Discover native axes/shape from the active reader
+        axis_names, level0_shape = self._native_axes_and_shape_for_scene(scene_index)
+
+        # (2) Channels
+        r = bio.reader
+        ccount = int(getattr(r.dims, "C", 1)) if "c" in axis_names else 0
+        channels = self._resolve_channels(axis_names, ccount)
+        pps = self._infer_physical_pixel_sizes(axis_names)
+
+        dims = "".join(ax.upper() for ax in axis_names)
+
+        # True when Y and X are present and all dims fit within TCZYX.
+        ome_dims = (
+            {
+                DimensionNames.SpatialY,
+                DimensionNames.SpatialX,
+            }
+            <= set(dims)
+            <= set(DEFAULT_DIMENSION_ORDER)
+        )
+
+        # (3) Scale to writer
+        if self._writer_level_shapes is not None:
+            writer_level_shapes_param: MultiResolutionShapeSpec = (
+                self._writer_level_shapes
+            )
+        elif (
+            self._writer_zarr_format == 3
+            and self._helper_num_levels is None
+            and ome_dims
+        ):
+            # v3 default: auto-generate pyramid levels down to atlas fit.
+            writer_level_shapes_param = build_pyramid_shapes(level0_shape, dims)
+        else:
+            derived = self._build_pyramid_shapes_simple(axis_names, level0_shape)
+            writer_level_shapes_param = (
+                derived if derived is not None else tuple(level0_shape)
+            )
+
+        # (4) Chunking + sharding
+        can_auto_layout = (
+            self._writer_zarr_format == 3
+            and self._writer_chunk_shape is None
+            and self._writer_shard_shape is None
+            and ome_dims
+        )
+        (
+            writer_chunk_shape_param,
+            writer_shard_shape_param,
+        ) = self._resolve_chunk_and_shard_params(
+            can_auto_layout, writer_level_shapes_param, dims
+        )
+
+        # (5) Build writer kwargs
+        if self._provenance is not None:
+            bioio_attrs, bioio_sidecars = self._provenance.provenance_from_scene(
                 scene_index
             )
+        else:
+            bioio_attrs, bioio_sidecars = None, {}
+        writer_kwargs: Dict[str, Any] = {
+            "store": out_path,
+            "level_shapes": writer_level_shapes_param,
+            "dtype": self.output_dtype,
+            **{
+                k: v
+                for k, v in {
+                    "chunk_shape": writer_chunk_shape_param,
+                    "shard_shape": writer_shard_shape_param,
+                    "compressor": self._writer_compressor,
+                    "zarr_format": self._writer_zarr_format,
+                    "image_name": (self._writer_image_name or base),
+                    "channels": channels,
+                    "rdefs": self._writer_rdefs,
+                    "creator_info": self._writer_creator_info,
+                    "root_transform": self._writer_root_transform,
+                    "axes_names": (self._writer_axes_names or axis_names),
+                    "axes_types": self._writer_axes_types,
+                    "axes_units": self._infer_axes_units(axis_names),
+                    "physical_pixel_size": pps,
+                    "attributes": bioio_attrs,
+                }.items()
+                if v is not None
+            },
+        }
 
-            # (2) Channels
-            r = bio.reader
-            ccount = int(getattr(r.dims, "C", 1)) if "c" in axis_names else 0
-            channel_models = self._resolve_channels(axis_names, ccount)
-            pps = self._infer_physical_pixel_sizes(axis_names)
+        writer = OMEZarrWriter(**writer_kwargs)
 
-            dims = "".join(ax.upper() for ax in axis_names)
+        # (6) Read pixels from the reader in its native axis order
+        bio.set_scene(scene_index)
+        r = bio.reader
+        native_order = r.dims.order.upper()
 
-            # True when dims are a subset of TCZYX with Y and X present.
-            ome_dims = (
-                {
-                    DimensionNames.SpatialY,
-                    DimensionNames.SpatialX,
-                }
-                <= set(dims)
-                <= set(DEFAULT_DIMENSION_ORDER)
-            )
+        # (7) Write — each call covers exactly one shard boundary at every
+        # pyramid level, so shards can be written in any order independently.
+        writer.initialize()
+        write_sidecars(out_path, bioio_sidecars)
 
-            # (3) Scale to writer
-            if self._writer_level_shapes is not None:
-                writer_level_shapes_param: MultiResolutionShapeSpec = (
-                    self._writer_level_shapes
-                )
-            elif (
-                self._writer_zarr_format == 3
-                and self._helper_num_levels is None
-                and ome_dims
+        scene_futures: List[Any] = []
+        if can_auto_layout:
+            out_dtype_str = str(self.output_dtype)
+            for src_bounds, dest_bounds in self._scene_shard_bounds(
+                writer_shard_shape_param, level0_shape
             ):
-                # v3 default: auto-generate pyramid levels down to atlas fit.
-                writer_level_shapes_param = build_pyramid_shapes(level0_shape, dims)
-            else:
-                derived = self._build_level_shapes_simple(axis_names, level0_shape)
-                writer_level_shapes_param = (
-                    derived if derived is not None else tuple(level0_shape)
+                task = (
+                    self.source,
+                    str(out_path),
+                    native_order,
+                    scene_index,
+                    out_dtype_str,
+                    src_bounds,
+                    dest_bounds,
                 )
+                scene_futures.append(pool.submit(_write_shard_process, *task))
+        else:
+            t_ax = dims.index("T") if "t" in axis_names else None
+            self._write_fallback(writer, r, native_order, t_ax, level0_shape)
+        return scene_futures
 
-            # (4) Chunking + sharding
-            writer_shard_shape_param = self._writer_shard_shape
-
-            can_auto_layout = (
-                self._writer_zarr_format == 3
-                and self._writer_chunk_shape is None
-                and self._writer_shard_shape is None
-                and ome_dims
-            )
-
-            if self._writer_chunk_shape is not None:
-                writer_chunk_shape_param: Optional[
-                    MultiResolutionShapeSpec
-                ] = self._writer_chunk_shape
-            elif can_auto_layout:
-                chunk_limit = (
-                    self._helper_memory_target_bytes or DEFAULT_CHUNK_LIMIT_BYTES
-                )
-                level_shapes_list = self._ensure_per_level_shapes(
-                    writer_level_shapes_param
-                )
-                auto_chunks, auto_shards = choose_pyramid_layout(
-                    level_shapes=level_shapes_list,
-                    dtype=self.output_dtype,
-                    dims=dims,
-                    chunk_limit_bytes=chunk_limit,
-                    shard_limit_bytes=self._shard_limit_bytes,
-                )
-                writer_chunk_shape_param = auto_chunks
-                writer_shard_shape_param = auto_shards
-            elif self._helper_memory_target_bytes is not None:
-                # Normalize level shapes to per-level list for the helper
-                level_shapes_list = self._ensure_per_level_shapes(
-                    writer_level_shapes_param
-                )
-                suggested = multiscale_chunk_size_from_memory_target(
-                    level_shapes_list,
-                    self.output_dtype,
-                    self._helper_memory_target_bytes,
-                )
-                writer_chunk_shape_param = [tuple(map(int, s)) for s in suggested]
-            else:
-                writer_chunk_shape_param = None  # writer suggests per-level ~16 MiB
-
-            # (5) Output path
-            scene_name = self.scene_names[scene_index]
-            base = (
-                self.output_basename
-                if len(self.scene_indices) == 1
-                else f"{self.output_basename}_{scene_name}"
-            )
-            base = re.sub(r"[<>:\"/\\|?*]", "_", base)
-
-            if fsspec.utils.get_protocol(self.destination) == "file":
-                # Destination is a local path
-                out_path = str(Path(self.destination) / f"{base}.ome.zarr")
-            else:
-                # Destination is a URI (e.g., S3, GCS, etc.)
-                out_path = self.destination.rstrip("/") + f"/{base}.ome.zarr"
-
-            fs, _ = fsspec.core.url_to_fs(self.destination)
-            if fs.exists(out_path):
-                raise FileExistsError(f"{out_path} already exists.")
-
-            # (6) Build writer kwargs. Provenance ("bioio_conversion" attrs) is merged
-            # the root group's attributes by the writer during initialize(); the
-            # matching XML sidecars are written afterwards, once the store exists.
-            if self._provenance is not None:
-                bioio_attrs, bioio_sidecars = self._provenance.provenance_from_scene(
-                    scene_index
-                )
-            else:
-                bioio_attrs, bioio_sidecars = None, {}
-            writer_kwargs: Dict[str, Any] = {
-                "store": out_path,
-                "level_shapes": writer_level_shapes_param,
-                "dtype": self.output_dtype,
-                **{
-                    k: v
-                    for k, v in {
-                        "chunk_shape": writer_chunk_shape_param,
-                        "shard_shape": writer_shard_shape_param,
-                        "compressor": self._writer_compressor,
-                        "zarr_format": self._writer_zarr_format,
-                        "image_name": (self._writer_image_name or base),
-                        "channels": channel_models,
-                        "rdefs": self._writer_rdefs,
-                        "creator_info": self._writer_creator_info,
-                        "root_transform": self._writer_root_transform,
-                        "axes_names": (self._writer_axes_names or axis_names),
-                        "axes_types": self._writer_axes_types,
-                        "axes_units": self._infer_axes_units(axis_names),
-                        "physical_pixel_size": pps,
-                        "attributes": bioio_attrs,
-                    }.items()
-                    if v is not None
-                },
-            }
-
-            writer = OMEZarrWriter(**writer_kwargs)
-
-            # (7) Read pixels directly from the reader in its native (unpadded) order
-            bio.set_scene(scene_index)
-            r = bio.reader
-            native_order = r.dims.order.upper()
-
-            # (8) Write — shard-aligned region writes via write_region.
-            # Every call covers exactly one shard boundary at every pyramid level
-            # so no shard is ever read back to be merged (no read-modify-write).
-            writer.initialize()
-
-            # Attach the source metadata XML sidecars under bioio/ now that the
-            # store exists (as json).
-            write_sidecars(out_path, bioio_sidecars)
-
-            if can_auto_layout:
-                self._write_auto_layout_shards(
-                    out_path, native_order, scene_index, auto_shards, level0_shape
-                )
-            else:
-                t_ax = dims.index("T") if "t" in axis_names else None
-                self._write_fallback(writer, r, native_order, t_ax, level0_shape)
-
-    def _write_auto_layout_shards(
+    def _resolve_chunk_and_shard_params(
         self,
-        out_path: str,
-        native_order: str,
-        scene_index: int,
+        can_auto_layout: bool,
+        writer_level_shapes_param: MultiResolutionShapeSpec,
+        dims: str,
+    ) -> Tuple[Optional[MultiResolutionShapeSpec], Optional[MultiResolutionShapeSpec]]:
+        """Return ``(chunk_shape_param, shard_shape_param)`` for the writer.
+
+        Prefers an explicit user-supplied chunk shape; falls back to auto-layout
+        via ``choose_pyramid_layout``, then memory-target heuristics, then
+        ``None`` (writer default).
+        """
+        shard_param = self._writer_shard_shape
+        if self._writer_chunk_shape is not None:
+            return self._writer_chunk_shape, shard_param
+        elif can_auto_layout:
+            chunk_limit = self._helper_memory_target_bytes or DEFAULT_CHUNK_LIMIT_BYTES
+            level_shapes_list = self._ensure_per_level_shapes(writer_level_shapes_param)
+            auto_chunks, auto_shards = choose_pyramid_layout(
+                level_shapes=level_shapes_list,
+                dtype=self.output_dtype,
+                dims=dims,
+                chunk_limit_bytes=chunk_limit,
+                shard_limit_bytes=self._shard_limit_bytes,
+            )
+            return auto_chunks, auto_shards
+        elif self._helper_memory_target_bytes is not None:
+            level_shapes_list = self._ensure_per_level_shapes(writer_level_shapes_param)
+            suggested = multiscale_chunk_size_from_memory_target(
+                level_shapes_list,
+                self.output_dtype,
+                self._helper_memory_target_bytes,
+            )
+            return [tuple(map(int, s)) for s in suggested], shard_param
+        else:
+            return None, shard_param  # writer suggests per-level ~16 MiB
+
+    def _scene_shard_bounds(
+        self,
         auto_shards: MultiResolutionShapeSpec,
         level0_shape: Tuple[int, ...],
-    ) -> None:
-        """Write each disjoint level-0 shard via its own ``write_region`` call.
+    ) -> List[Tuple[_Bounds, _Bounds]]:
+        """Enumerate a scene's level-0 shard regions, one entry per shard.
 
-        Every shard covers exactly one shard boundary at every pyramid level, so
-        no shard is ever read back to be merged. The write phase is GIL-bound, so
-        when ``n_workers > 1`` the shards are dispatched to a
-        ``ProcessPoolExecutor`` (the parent has already created the store via
-        ``writer.initialize()``); otherwise they are written in-process.
+        Returns ``(src_bounds, dest_bounds)`` pairs tiling ``level0_shape`` into
+        disjoint, shard-aligned boxes. Each region maps to exactly one shard, so
+        it can be written independently and in any order.
         """
         shard0 = auto_shards[0]
         per_ax = [
@@ -666,40 +706,7 @@ class OmeZarrConverter:
             ]
             for ax in range(len(level0_shape))
         ]
-        shard_bounds: List[Tuple[_Bounds, _Bounds]] = [
-            (bounds, bounds) for bounds in itertools.product(*per_ax)
-        ]
-        out_dtype_str = str(self.output_dtype)
-        n_workers = self._n_workers
-
-        if n_workers > 1:
-            with ProcessPoolExecutor(max_workers=n_workers) as pool:
-                futures = [
-                    pool.submit(
-                        _write_shard_process,
-                        self.source,
-                        out_path,
-                        native_order,
-                        scene_index,
-                        out_dtype_str,
-                        src_bounds,
-                        dest_bounds,
-                    )
-                    for src_bounds, dest_bounds in shard_bounds
-                ]
-                for future in futures:
-                    future.result()  # surface any worker exception
-        else:
-            for src_bounds, dest_bounds in shard_bounds:
-                _write_shard_process(
-                    self.source,
-                    str(out_path),
-                    native_order,
-                    scene_index,
-                    out_dtype_str,
-                    src_bounds,
-                    dest_bounds,
-                )
+        return [(bounds, bounds) for bounds in itertools.product(*per_ax)]
 
     def _write_fallback(
         self,
