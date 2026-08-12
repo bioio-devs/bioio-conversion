@@ -271,7 +271,7 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_available_cores</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Number of cores the current process may actually run on.</span>
 
-<span class="sd">    Prefer the process&#39;s CPU affinity, which reflects the cores granted by a</span>
+<span class="sd">    Prefer the converter&#39;s CPU affinity, which reflects the cores granted by a</span>
 <span class="sd">    cgroup/cpuset (e.g. a SLURM ``--cpus-per-task`` allocation) rather than the</span>
 <span class="sd">    node&#39;s total hardware. ``cpu_affinity`` is unavailable on platforms without</span>
 <span class="sd">    an affinity API (notably macOS), where it raises ``AttributeError``; there</span>
@@ -460,9 +460,8 @@
 <span class="sd">        dtype : Optional[Union[str, np.dtype]]</span>
 <span class="sd">            Override output data type; defaults to the reader’s dtype.</span>
 <span class="sd">        n_workers : Optional[int]</span>
-<span class="sd">            Number of worker *processes* for shard writes (auto-layout path).</span>
-<span class="sd">            If ``None`` (default), derived from the cores actually available to</span>
-<span class="sd">            the process. One process per core, floored at 1.</span>
+<span class="sd">            Number of worker processes for shard writes (auto-layout path).</span>
+<span class="sd">            Defaults to the number of CPU cores available to the converter.</span>
 <span class="sd">        shard_limit_bytes : int</span>
 <span class="sd">            Maximum uncompressed size of a level-0 shard. Default: 4 GiB.</span>
 <span class="sd">        include_provenance : bool, default = False</span>
@@ -632,8 +631,7 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Use BioImage.reader (the actual format plugin) to discover true</span>
-<span class="sd">        axis order &amp; shape. This reflects CYX, CZYX, TCZYX, etc., without</span>
-<span class="sd">        padding.</span>
+<span class="sd">        axis order &amp; shape. This reflects CYX, CZYX, TCZYX, etc.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="o">.</span><span class="n">set_scene</span><span class="p">(</span><span class="n">scene_index</span><span class="p">)</span>
         <span class="n">r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="o">.</span><span class="n">reader</span>
@@ -650,7 +648,7 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="n">d</span> <span class="o">*</span> <span class="n">f</span><span class="p">)))</span> <span class="k">for</span> <span class="n">d</span><span class="p">,</span> <span class="n">f</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">base_shape</span><span class="p">,</span> <span class="n">factors</span><span class="p">))</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_build_level_shapes_simple</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_pyramid_shapes_simple</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">axis_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
         <span class="n">level0_shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
@@ -720,188 +718,230 @@
                     <span class="ne">UserWarning</span><span class="p">,</span>
                 <span class="p">)</span>
 
+        <span class="n">fs</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">fsspec</span><span class="o">.</span><span class="n">core</span><span class="o">.</span><span class="n">url_to_fs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span>
+        <span class="n">is_local</span> <span class="o">=</span> <span class="n">fsspec</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">get_protocol</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;file&quot;</span>
+        <span class="n">out_paths</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene_indices</span><span class="p">:</span>
+            <span class="n">base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_output_file_basename_for_scene</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">is_local</span><span class="p">:</span>
+                <span class="n">out_paths</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">.ome.zarr&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">out_paths</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;/</span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">.ome.zarr&quot;</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">out_paths</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">fs</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">FileExistsError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> already exists.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># A single process pool spans *all* scenes</span>
+        <span class="n">pool</span> <span class="o">=</span> <span class="n">ProcessPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_n_workers</span><span class="p">)</span>
+        <span class="n">futures</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">scene_index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene_indices</span><span class="p">:</span>
+                <span class="n">futures</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_plan_and_dispatch_scene</span><span class="p">(</span>
+                        <span class="n">scene_index</span><span class="p">,</span> <span class="n">out_paths</span><span class="p">[</span><span class="n">scene_index</span><span class="p">],</span> <span class="n">pool</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+            <span class="k">for</span> <span class="n">future</span> <span class="ow">in</span> <span class="n">futures</span><span class="p">:</span>
+                <span class="n">future</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">pool</span><span class="o">.</span><span class="n">shutdown</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_output_file_basename_for_scene</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">scene_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sanitized output basename (no extension) for a scene&#39;s store.</span>
+
+<span class="sd">        Single-scene conversions use the base name as-is; multi-scene runs</span>
+<span class="sd">        suffix each store with the scene name.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">scene_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene_names</span><span class="p">[</span><span class="n">scene_index</span><span class="p">]</span>
+        <span class="n">basename</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">output_basename</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">scene_indices</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+            <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">output_basename</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">scene_name</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[&lt;&gt;:</span><span class="se">\&quot;</span><span class="s2">/</span><span class="se">\\</span><span class="s2">|?*]&quot;</span><span class="p">,</span> <span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="n">basename</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_plan_and_dispatch_scene</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">scene_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">out_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">pool</span><span class="p">:</span> <span class="n">ProcessPoolExecutor</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Build one scene&#39;s store, initialize it, and dispatch its writes.</span>
+
+<span class="sd">        Returns the list of futures submitted to ``pool`` (empty when the</span>
+<span class="sd">        fallback single-threaded path is used).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">bio</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span>
-        <span class="k">for</span> <span class="n">scene_index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene_indices</span><span class="p">:</span>
-            <span class="c1"># (1) Discover native axes/shape from the active reader</span>
-            <span class="n">axis_names</span><span class="p">,</span> <span class="n">level0_shape</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_axes_and_shape_for_scene</span><span class="p">(</span>
+        <span class="n">base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_output_file_basename_for_scene</span><span class="p">(</span><span class="n">scene_index</span><span class="p">)</span>
+
+        <span class="c1"># (1) Discover native axes/shape from the active reader</span>
+        <span class="n">axis_names</span><span class="p">,</span> <span class="n">level0_shape</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_axes_and_shape_for_scene</span><span class="p">(</span><span class="n">scene_index</span><span class="p">)</span>
+
+        <span class="c1"># (2) Channels</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">bio</span><span class="o">.</span><span class="n">reader</span>
+        <span class="n">ccount</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">dims</span><span class="p">,</span> <span class="s2">&quot;C&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span> <span class="k">if</span> <span class="s2">&quot;c&quot;</span> <span class="ow">in</span> <span class="n">axis_names</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="n">channels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_channels</span><span class="p">(</span><span class="n">axis_names</span><span class="p">,</span> <span class="n">ccount</span><span class="p">)</span>
+        <span class="n">pps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_physical_pixel_sizes</span><span class="p">(</span><span class="n">axis_names</span><span class="p">)</span>
+
+        <span class="n">dims</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ax</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">axis_names</span><span class="p">)</span>
+
+        <span class="c1"># True when Y and X are present and all dims fit within TCZYX.</span>
+        <span class="n">ome_dims</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">{</span>
+                <span class="n">DimensionNames</span><span class="o">.</span><span class="n">SpatialY</span><span class="p">,</span>
+                <span class="n">DimensionNames</span><span class="o">.</span><span class="n">SpatialX</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="o">&lt;=</span> <span class="nb">set</span><span class="p">(</span><span class="n">dims</span><span class="p">)</span>
+            <span class="o">&lt;=</span> <span class="nb">set</span><span class="p">(</span><span class="n">DEFAULT_DIMENSION_ORDER</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># (3) Scale to writer</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_level_shapes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">writer_level_shapes_param</span><span class="p">:</span> <span class="n">MultiResolutionShapeSpec</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_writer_level_shapes</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_writer_zarr_format</span> <span class="o">==</span> <span class="mi">3</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_helper_num_levels</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">ome_dims</span>
+        <span class="p">):</span>
+            <span class="c1"># v3 default: auto-generate pyramid levels down to atlas fit.</span>
+            <span class="n">writer_level_shapes_param</span> <span class="o">=</span> <span class="n">build_pyramid_shapes</span><span class="p">(</span><span class="n">level0_shape</span><span class="p">,</span> <span class="n">dims</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">derived</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_pyramid_shapes_simple</span><span class="p">(</span><span class="n">axis_names</span><span class="p">,</span> <span class="n">level0_shape</span><span class="p">)</span>
+            <span class="n">writer_level_shapes_param</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">derived</span> <span class="k">if</span> <span class="n">derived</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">level0_shape</span><span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="c1"># (4) Chunking + sharding</span>
+        <span class="n">can_auto_layout</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_writer_zarr_format</span> <span class="o">==</span> <span class="mi">3</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_chunk_shape</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_shard_shape</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="n">ome_dims</span>
+        <span class="p">)</span>
+        <span class="p">(</span>
+            <span class="n">writer_chunk_shape_param</span><span class="p">,</span>
+            <span class="n">writer_shard_shape_param</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_chunk_and_shard_params</span><span class="p">(</span>
+            <span class="n">can_auto_layout</span><span class="p">,</span> <span class="n">writer_level_shapes_param</span><span class="p">,</span> <span class="n">dims</span>
+        <span class="p">)</span>
+
+        <span class="c1"># (5) Build writer kwargs</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_provenance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">bioio_attrs</span><span class="p">,</span> <span class="n">bioio_sidecars</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_provenance</span><span class="o">.</span><span class="n">provenance_from_scene</span><span class="p">(</span>
                 <span class="n">scene_index</span>
             <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">bioio_attrs</span><span class="p">,</span> <span class="n">bioio_sidecars</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="p">{}</span>
+        <span class="n">writer_kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;store&quot;</span><span class="p">:</span> <span class="n">out_path</span><span class="p">,</span>
+            <span class="s2">&quot;level_shapes&quot;</span><span class="p">:</span> <span class="n">writer_level_shapes_param</span><span class="p">,</span>
+            <span class="s2">&quot;dtype&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">,</span>
+            <span class="o">**</span><span class="p">{</span>
+                <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
+                <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">{</span>
+                    <span class="s2">&quot;chunk_shape&quot;</span><span class="p">:</span> <span class="n">writer_chunk_shape_param</span><span class="p">,</span>
+                    <span class="s2">&quot;shard_shape&quot;</span><span class="p">:</span> <span class="n">writer_shard_shape_param</span><span class="p">,</span>
+                    <span class="s2">&quot;compressor&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_compressor</span><span class="p">,</span>
+                    <span class="s2">&quot;zarr_format&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_zarr_format</span><span class="p">,</span>
+                    <span class="s2">&quot;image_name&quot;</span><span class="p">:</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_writer_image_name</span> <span class="ow">or</span> <span class="n">base</span><span class="p">),</span>
+                    <span class="s2">&quot;channels&quot;</span><span class="p">:</span> <span class="n">channels</span><span class="p">,</span>
+                    <span class="s2">&quot;rdefs&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_rdefs</span><span class="p">,</span>
+                    <span class="s2">&quot;creator_info&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_creator_info</span><span class="p">,</span>
+                    <span class="s2">&quot;root_transform&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_root_transform</span><span class="p">,</span>
+                    <span class="s2">&quot;axes_names&quot;</span><span class="p">:</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_writer_axes_names</span> <span class="ow">or</span> <span class="n">axis_names</span><span class="p">),</span>
+                    <span class="s2">&quot;axes_types&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_axes_types</span><span class="p">,</span>
+                    <span class="s2">&quot;axes_units&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_axes_units</span><span class="p">(</span><span class="n">axis_names</span><span class="p">),</span>
+                    <span class="s2">&quot;physical_pixel_size&quot;</span><span class="p">:</span> <span class="n">pps</span><span class="p">,</span>
+                    <span class="s2">&quot;attributes&quot;</span><span class="p">:</span> <span class="n">bioio_attrs</span><span class="p">,</span>
+                <span class="p">}</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="p">},</span>
+        <span class="p">}</span>
 
-            <span class="c1"># (2) Channels</span>
-            <span class="n">r</span> <span class="o">=</span> <span class="n">bio</span><span class="o">.</span><span class="n">reader</span>
-            <span class="n">ccount</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">dims</span><span class="p">,</span> <span class="s2">&quot;C&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span> <span class="k">if</span> <span class="s2">&quot;c&quot;</span> <span class="ow">in</span> <span class="n">axis_names</span> <span class="k">else</span> <span class="mi">0</span>
-            <span class="n">channel_models</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_channels</span><span class="p">(</span><span class="n">axis_names</span><span class="p">,</span> <span class="n">ccount</span><span class="p">)</span>
-            <span class="n">pps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_physical_pixel_sizes</span><span class="p">(</span><span class="n">axis_names</span><span class="p">)</span>
+        <span class="n">writer</span> <span class="o">=</span> <span class="n">OMEZarrWriter</span><span class="p">(</span><span class="o">**</span><span class="n">writer_kwargs</span><span class="p">)</span>
 
-            <span class="n">dims</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ax</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">axis_names</span><span class="p">)</span>
+        <span class="c1"># (6) Read pixels from the reader in its native axis order</span>
+        <span class="n">bio</span><span class="o">.</span><span class="n">set_scene</span><span class="p">(</span><span class="n">scene_index</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">bio</span><span class="o">.</span><span class="n">reader</span>
+        <span class="n">native_order</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">dims</span><span class="o">.</span><span class="n">order</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
 
-            <span class="c1"># True when dims are a subset of TCZYX with Y and X present.</span>
-            <span class="n">ome_dims</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="p">{</span>
-                    <span class="n">DimensionNames</span><span class="o">.</span><span class="n">SpatialY</span><span class="p">,</span>
-                    <span class="n">DimensionNames</span><span class="o">.</span><span class="n">SpatialX</span><span class="p">,</span>
-                <span class="p">}</span>
-                <span class="o">&lt;=</span> <span class="nb">set</span><span class="p">(</span><span class="n">dims</span><span class="p">)</span>
-                <span class="o">&lt;=</span> <span class="nb">set</span><span class="p">(</span><span class="n">DEFAULT_DIMENSION_ORDER</span><span class="p">)</span>
-            <span class="p">)</span>
+        <span class="c1"># (7) Write — each call covers exactly one shard boundary at every</span>
+        <span class="c1"># pyramid level, so shards can be written in any order independently.</span>
+        <span class="n">writer</span><span class="o">.</span><span class="n">initialize</span><span class="p">()</span>
+        <span class="n">write_sidecars</span><span class="p">(</span><span class="n">out_path</span><span class="p">,</span> <span class="n">bioio_sidecars</span><span class="p">)</span>
 
-            <span class="c1"># (3) Scale to writer</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_level_shapes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">writer_level_shapes_param</span><span class="p">:</span> <span class="n">MultiResolutionShapeSpec</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">_writer_level_shapes</span>
-                <span class="p">)</span>
-            <span class="k">elif</span> <span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_writer_zarr_format</span> <span class="o">==</span> <span class="mi">3</span>
-                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_helper_num_levels</span> <span class="ow">is</span> <span class="kc">None</span>
-                <span class="ow">and</span> <span class="n">ome_dims</span>
+        <span class="n">scene_futures</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">can_auto_layout</span><span class="p">:</span>
+            <span class="n">out_dtype_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">src_bounds</span><span class="p">,</span> <span class="n">dest_bounds</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scene_shard_bounds</span><span class="p">(</span>
+                <span class="n">writer_shard_shape_param</span><span class="p">,</span> <span class="n">level0_shape</span>
             <span class="p">):</span>
-                <span class="c1"># v3 default: auto-generate pyramid levels down to atlas fit.</span>
-                <span class="n">writer_level_shapes_param</span> <span class="o">=</span> <span class="n">build_pyramid_shapes</span><span class="p">(</span><span class="n">level0_shape</span><span class="p">,</span> <span class="n">dims</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">derived</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_level_shapes_simple</span><span class="p">(</span><span class="n">axis_names</span><span class="p">,</span> <span class="n">level0_shape</span><span class="p">)</span>
-                <span class="n">writer_level_shapes_param</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">derived</span> <span class="k">if</span> <span class="n">derived</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">level0_shape</span><span class="p">)</span>
+                <span class="n">task</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">source</span><span class="p">,</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">out_path</span><span class="p">),</span>
+                    <span class="n">native_order</span><span class="p">,</span>
+                    <span class="n">scene_index</span><span class="p">,</span>
+                    <span class="n">out_dtype_str</span><span class="p">,</span>
+                    <span class="n">src_bounds</span><span class="p">,</span>
+                    <span class="n">dest_bounds</span><span class="p">,</span>
                 <span class="p">)</span>
+                <span class="n">scene_futures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">_write_shard_process</span><span class="p">,</span> <span class="o">*</span><span class="n">task</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">t_ax</span> <span class="o">=</span> <span class="n">dims</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;T&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="s2">&quot;t&quot;</span> <span class="ow">in</span> <span class="n">axis_names</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write_fallback</span><span class="p">(</span><span class="n">writer</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">native_order</span><span class="p">,</span> <span class="n">t_ax</span><span class="p">,</span> <span class="n">level0_shape</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">scene_futures</span>
 
-            <span class="c1"># (4) Chunking + sharding</span>
-            <span class="n">writer_shard_shape_param</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_shard_shape</span>
-
-            <span class="n">can_auto_layout</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_writer_zarr_format</span> <span class="o">==</span> <span class="mi">3</span>
-                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_chunk_shape</span> <span class="ow">is</span> <span class="kc">None</span>
-                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_shard_shape</span> <span class="ow">is</span> <span class="kc">None</span>
-                <span class="ow">and</span> <span class="n">ome_dims</span>
-            <span class="p">)</span>
-
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_chunk_shape</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">writer_chunk_shape_param</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
-                    <span class="n">MultiResolutionShapeSpec</span>
-                <span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_chunk_shape</span>
-            <span class="k">elif</span> <span class="n">can_auto_layout</span><span class="p">:</span>
-                <span class="n">chunk_limit</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">_helper_memory_target_bytes</span> <span class="ow">or</span> <span class="n">DEFAULT_CHUNK_LIMIT_BYTES</span>
-                <span class="p">)</span>
-                <span class="n">level_shapes_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_per_level_shapes</span><span class="p">(</span>
-                    <span class="n">writer_level_shapes_param</span>
-                <span class="p">)</span>
-                <span class="n">auto_chunks</span><span class="p">,</span> <span class="n">auto_shards</span> <span class="o">=</span> <span class="n">choose_pyramid_layout</span><span class="p">(</span>
-                    <span class="n">level_shapes</span><span class="o">=</span><span class="n">level_shapes_list</span><span class="p">,</span>
-                    <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">,</span>
-                    <span class="n">dims</span><span class="o">=</span><span class="n">dims</span><span class="p">,</span>
-                    <span class="n">chunk_limit_bytes</span><span class="o">=</span><span class="n">chunk_limit</span><span class="p">,</span>
-                    <span class="n">shard_limit_bytes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_shard_limit_bytes</span><span class="p">,</span>
-                <span class="p">)</span>
-                <span class="n">writer_chunk_shape_param</span> <span class="o">=</span> <span class="n">auto_chunks</span>
-                <span class="n">writer_shard_shape_param</span> <span class="o">=</span> <span class="n">auto_shards</span>
-            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_helper_memory_target_bytes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="c1"># Normalize level shapes to per-level list for the helper</span>
-                <span class="n">level_shapes_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_per_level_shapes</span><span class="p">(</span>
-                    <span class="n">writer_level_shapes_param</span>
-                <span class="p">)</span>
-                <span class="n">suggested</span> <span class="o">=</span> <span class="n">multiscale_chunk_size_from_memory_target</span><span class="p">(</span>
-                    <span class="n">level_shapes_list</span><span class="p">,</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">,</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">_helper_memory_target_bytes</span><span class="p">,</span>
-                <span class="p">)</span>
-                <span class="n">writer_chunk_shape_param</span> <span class="o">=</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">s</span><span class="p">))</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">suggested</span><span class="p">]</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">writer_chunk_shape_param</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># writer suggests per-level ~16 MiB</span>
-
-            <span class="c1"># (5) Output path</span>
-            <span class="n">scene_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene_names</span><span class="p">[</span><span class="n">scene_index</span><span class="p">]</span>
-            <span class="n">base</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">output_basename</span>
-                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">scene_indices</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
-                <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">output_basename</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">scene_name</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="p">)</span>
-            <span class="n">base</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[&lt;&gt;:</span><span class="se">\&quot;</span><span class="s2">/</span><span class="se">\\</span><span class="s2">|?*]&quot;</span><span class="p">,</span> <span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="n">base</span><span class="p">)</span>
-
-            <span class="k">if</span> <span class="n">fsspec</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">get_protocol</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;file&quot;</span><span class="p">:</span>
-                <span class="c1"># Destination is a local path</span>
-                <span class="n">out_path</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">.ome.zarr&quot;</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="c1"># Destination is a URI (e.g., S3, GCS, etc.)</span>
-                <span class="n">out_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;/</span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">.ome.zarr&quot;</span>
-
-            <span class="n">fs</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">fsspec</span><span class="o">.</span><span class="n">core</span><span class="o">.</span><span class="n">url_to_fs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">fs</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">out_path</span><span class="p">):</span>
-                <span class="k">raise</span> <span class="ne">FileExistsError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">out_path</span><span class="si">}</span><span class="s2"> already exists.&quot;</span><span class="p">)</span>
-
-            <span class="c1"># (6) Build writer kwargs. Provenance (&quot;bioio_conversion&quot; attrs) is merged</span>
-            <span class="c1"># the root group&#39;s attributes by the writer during initialize(); the</span>
-            <span class="c1"># matching XML sidecars are written afterwards, once the store exists.</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_provenance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">bioio_attrs</span><span class="p">,</span> <span class="n">bioio_sidecars</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_provenance</span><span class="o">.</span><span class="n">provenance_from_scene</span><span class="p">(</span>
-                    <span class="n">scene_index</span>
-                <span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">bioio_attrs</span><span class="p">,</span> <span class="n">bioio_sidecars</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="p">{}</span>
-            <span class="n">writer_kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="s2">&quot;store&quot;</span><span class="p">:</span> <span class="n">out_path</span><span class="p">,</span>
-                <span class="s2">&quot;level_shapes&quot;</span><span class="p">:</span> <span class="n">writer_level_shapes_param</span><span class="p">,</span>
-                <span class="s2">&quot;dtype&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">,</span>
-                <span class="o">**</span><span class="p">{</span>
-                    <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
-                    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">{</span>
-                        <span class="s2">&quot;chunk_shape&quot;</span><span class="p">:</span> <span class="n">writer_chunk_shape_param</span><span class="p">,</span>
-                        <span class="s2">&quot;shard_shape&quot;</span><span class="p">:</span> <span class="n">writer_shard_shape_param</span><span class="p">,</span>
-                        <span class="s2">&quot;compressor&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_compressor</span><span class="p">,</span>
-                        <span class="s2">&quot;zarr_format&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_zarr_format</span><span class="p">,</span>
-                        <span class="s2">&quot;image_name&quot;</span><span class="p">:</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_writer_image_name</span> <span class="ow">or</span> <span class="n">base</span><span class="p">),</span>
-                        <span class="s2">&quot;channels&quot;</span><span class="p">:</span> <span class="n">channel_models</span><span class="p">,</span>
-                        <span class="s2">&quot;rdefs&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_rdefs</span><span class="p">,</span>
-                        <span class="s2">&quot;creator_info&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_creator_info</span><span class="p">,</span>
-                        <span class="s2">&quot;root_transform&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_root_transform</span><span class="p">,</span>
-                        <span class="s2">&quot;axes_names&quot;</span><span class="p">:</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_writer_axes_names</span> <span class="ow">or</span> <span class="n">axis_names</span><span class="p">),</span>
-                        <span class="s2">&quot;axes_types&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_axes_types</span><span class="p">,</span>
-                        <span class="s2">&quot;axes_units&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_axes_units</span><span class="p">(</span><span class="n">axis_names</span><span class="p">),</span>
-                        <span class="s2">&quot;physical_pixel_size&quot;</span><span class="p">:</span> <span class="n">pps</span><span class="p">,</span>
-                        <span class="s2">&quot;attributes&quot;</span><span class="p">:</span> <span class="n">bioio_attrs</span><span class="p">,</span>
-                    <span class="p">}</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-                    <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                <span class="p">},</span>
-            <span class="p">}</span>
-
-            <span class="n">writer</span> <span class="o">=</span> <span class="n">OMEZarrWriter</span><span class="p">(</span><span class="o">**</span><span class="n">writer_kwargs</span><span class="p">)</span>
-
-            <span class="c1"># (7) Read pixels directly from the reader in its native (unpadded) order</span>
-            <span class="n">bio</span><span class="o">.</span><span class="n">set_scene</span><span class="p">(</span><span class="n">scene_index</span><span class="p">)</span>
-            <span class="n">r</span> <span class="o">=</span> <span class="n">bio</span><span class="o">.</span><span class="n">reader</span>
-            <span class="n">native_order</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">dims</span><span class="o">.</span><span class="n">order</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
-
-            <span class="c1"># (8) Write — shard-aligned region writes via write_region.</span>
-            <span class="c1"># Every call covers exactly one shard boundary at every pyramid level</span>
-            <span class="c1"># so no shard is ever read back to be merged (no read-modify-write).</span>
-            <span class="n">writer</span><span class="o">.</span><span class="n">initialize</span><span class="p">()</span>
-
-            <span class="c1"># Attach the source metadata XML sidecars under bioio/ now that the</span>
-            <span class="c1"># store exists (as json).</span>
-            <span class="n">write_sidecars</span><span class="p">(</span><span class="n">out_path</span><span class="p">,</span> <span class="n">bioio_sidecars</span><span class="p">)</span>
-
-            <span class="k">if</span> <span class="n">can_auto_layout</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_write_auto_layout_shards</span><span class="p">(</span>
-                    <span class="n">out_path</span><span class="p">,</span> <span class="n">native_order</span><span class="p">,</span> <span class="n">scene_index</span><span class="p">,</span> <span class="n">auto_shards</span><span class="p">,</span> <span class="n">level0_shape</span>
-                <span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">t_ax</span> <span class="o">=</span> <span class="n">dims</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;T&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="s2">&quot;t&quot;</span> <span class="ow">in</span> <span class="n">axis_names</span> <span class="k">else</span> <span class="kc">None</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_write_fallback</span><span class="p">(</span><span class="n">writer</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">native_order</span><span class="p">,</span> <span class="n">t_ax</span><span class="p">,</span> <span class="n">level0_shape</span><span class="p">)</span></div>
-
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_write_auto_layout_shards</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_chunk_and_shard_params</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">out_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-        <span class="n">native_order</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-        <span class="n">scene_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">can_auto_layout</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+        <span class="n">writer_level_shapes_param</span><span class="p">:</span> <span class="n">MultiResolutionShapeSpec</span><span class="p">,</span>
+        <span class="n">dims</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">MultiResolutionShapeSpec</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MultiResolutionShapeSpec</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return ``(chunk_shape_param, shard_shape_param)`` for the writer.</span>
+
+<span class="sd">        Prefers an explicit user-supplied chunk shape; falls back to auto-layout</span>
+<span class="sd">        via ``choose_pyramid_layout``, then memory-target heuristics, then</span>
+<span class="sd">        ``None`` (writer default).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">shard_param</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_shard_shape</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_chunk_shape</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_writer_chunk_shape</span><span class="p">,</span> <span class="n">shard_param</span>
+        <span class="k">elif</span> <span class="n">can_auto_layout</span><span class="p">:</span>
+            <span class="n">chunk_limit</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_helper_memory_target_bytes</span> <span class="ow">or</span> <span class="n">DEFAULT_CHUNK_LIMIT_BYTES</span>
+            <span class="n">level_shapes_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_per_level_shapes</span><span class="p">(</span><span class="n">writer_level_shapes_param</span><span class="p">)</span>
+            <span class="n">auto_chunks</span><span class="p">,</span> <span class="n">auto_shards</span> <span class="o">=</span> <span class="n">choose_pyramid_layout</span><span class="p">(</span>
+                <span class="n">level_shapes</span><span class="o">=</span><span class="n">level_shapes_list</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">,</span>
+                <span class="n">dims</span><span class="o">=</span><span class="n">dims</span><span class="p">,</span>
+                <span class="n">chunk_limit_bytes</span><span class="o">=</span><span class="n">chunk_limit</span><span class="p">,</span>
+                <span class="n">shard_limit_bytes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_shard_limit_bytes</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">auto_chunks</span><span class="p">,</span> <span class="n">auto_shards</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_helper_memory_target_bytes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">level_shapes_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_per_level_shapes</span><span class="p">(</span><span class="n">writer_level_shapes_param</span><span class="p">)</span>
+            <span class="n">suggested</span> <span class="o">=</span> <span class="n">multiscale_chunk_size_from_memory_target</span><span class="p">(</span>
+                <span class="n">level_shapes_list</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_helper_memory_target_bytes</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">s</span><span class="p">))</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">suggested</span><span class="p">],</span> <span class="n">shard_param</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">shard_param</span>  <span class="c1"># writer suggests per-level ~16 MiB</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_scene_shard_bounds</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
         <span class="n">auto_shards</span><span class="p">:</span> <span class="n">MultiResolutionShapeSpec</span><span class="p">,</span>
         <span class="n">level0_shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Write each disjoint level-0 shard via its own ``write_region`` call.</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">_Bounds</span><span class="p">,</span> <span class="n">_Bounds</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Enumerate a scene&#39;s level-0 shard regions, one entry per shard.</span>
 
-<span class="sd">        Every shard covers exactly one shard boundary at every pyramid level, so</span>
-<span class="sd">        no shard is ever read back to be merged. The write phase is GIL-bound, so</span>
-<span class="sd">        when ``n_workers &gt; 1`` the shards are dispatched to a</span>
-<span class="sd">        ``ProcessPoolExecutor`` (the parent has already created the store via</span>
-<span class="sd">        ``writer.initialize()``); otherwise they are written in-process.</span>
+<span class="sd">        Returns ``(src_bounds, dest_bounds)`` pairs tiling ``level0_shape`` into</span>
+<span class="sd">        disjoint, shard-aligned boxes. Each region maps to exactly one shard, so</span>
+<span class="sd">        it can be written independently and in any order.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">shard0</span> <span class="o">=</span> <span class="n">auto_shards</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="n">per_ax</span> <span class="o">=</span> <span class="p">[</span>
@@ -911,40 +951,7 @@
             <span class="p">]</span>
             <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">level0_shape</span><span class="p">))</span>
         <span class="p">]</span>
-        <span class="n">shard_bounds</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">_Bounds</span><span class="p">,</span> <span class="n">_Bounds</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="p">(</span><span class="n">bounds</span><span class="p">,</span> <span class="n">bounds</span><span class="p">)</span> <span class="k">for</span> <span class="n">bounds</span> <span class="ow">in</span> <span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="o">*</span><span class="n">per_ax</span><span class="p">)</span>
-        <span class="p">]</span>
-        <span class="n">out_dtype_str</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">)</span>
-        <span class="n">n_workers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_n_workers</span>
-
-        <span class="k">if</span> <span class="n">n_workers</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="k">with</span> <span class="n">ProcessPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">n_workers</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
-                <span class="n">futures</span> <span class="o">=</span> <span class="p">[</span>
-                    <span class="n">pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span>
-                        <span class="n">_write_shard_process</span><span class="p">,</span>
-                        <span class="bp">self</span><span class="o">.</span><span class="n">source</span><span class="p">,</span>
-                        <span class="n">out_path</span><span class="p">,</span>
-                        <span class="n">native_order</span><span class="p">,</span>
-                        <span class="n">scene_index</span><span class="p">,</span>
-                        <span class="n">out_dtype_str</span><span class="p">,</span>
-                        <span class="n">src_bounds</span><span class="p">,</span>
-                        <span class="n">dest_bounds</span><span class="p">,</span>
-                    <span class="p">)</span>
-                    <span class="k">for</span> <span class="n">src_bounds</span><span class="p">,</span> <span class="n">dest_bounds</span> <span class="ow">in</span> <span class="n">shard_bounds</span>
-                <span class="p">]</span>
-                <span class="k">for</span> <span class="n">future</span> <span class="ow">in</span> <span class="n">futures</span><span class="p">:</span>
-                    <span class="n">future</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>  <span class="c1"># surface any worker exception</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">src_bounds</span><span class="p">,</span> <span class="n">dest_bounds</span> <span class="ow">in</span> <span class="n">shard_bounds</span><span class="p">:</span>
-                <span class="n">_write_shard_process</span><span class="p">(</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">source</span><span class="p">,</span>
-                    <span class="nb">str</span><span class="p">(</span><span class="n">out_path</span><span class="p">),</span>
-                    <span class="n">native_order</span><span class="p">,</span>
-                    <span class="n">scene_index</span><span class="p">,</span>
-                    <span class="n">out_dtype_str</span><span class="p">,</span>
-                    <span class="n">src_bounds</span><span class="p">,</span>
-                    <span class="n">dest_bounds</span><span class="p">,</span>
-                <span class="p">)</span>
+        <span class="k">return</span> <span class="p">[(</span><span class="n">bounds</span><span class="p">,</span> <span class="n">bounds</span><span class="p">)</span> <span class="k">for</span> <span class="n">bounds</span> <span class="ow">in</span> <span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="o">*</span><span class="n">per_ax</span><span class="p">)]</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_write_fallback</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>

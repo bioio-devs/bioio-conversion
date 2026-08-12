@@ -341,9 +341,8 @@ as available in both source and destination.</p>
 </dd>
 <dt><strong>dtype</strong><span class="classifier">Optional[Union[str, np.dtype]]</span></dt><dd><p>Override output data type; defaults to the reader’s dtype.</p>
 </dd>
-<dt><strong>n_workers</strong><span class="classifier">Optional[int]</span></dt><dd><p>Number of worker <em>processes</em> for shard writes (auto-layout path).
-If <code class="docutils literal notranslate"><span class="pre">None</span></code> (default), derived from the cores actually available to
-the process. One process per core, floored at 1.</p>
+<dt><strong>n_workers</strong><span class="classifier">Optional[int]</span></dt><dd><p>Number of worker processes for shard writes (auto-layout path).
+Defaults to the number of CPU cores available to the converter.</p>
 </dd>
 <dt><strong>shard_limit_bytes</strong><span class="classifier">int</span></dt><dd><p>Maximum uncompressed size of a level-0 shard. Default: 4 GiB.</p>
 </dd>
