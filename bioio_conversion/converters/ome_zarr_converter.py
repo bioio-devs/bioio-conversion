@@ -74,14 +74,23 @@ def _write_shard_process(
     # New image instance to access data per process
     bio = BioImage(source)
     bio.set_scene(scene_index)
-    region_kwargs = {
-        native_order[i]: slice(src_region[i].start, src_region[i].stop)
-        for i in range(len(native_order))
-    }
-    # Read the shard via the reader's get_image_data slicing.
-    shard_data = np.asarray(
-        bio.reader.get_image_data(native_order, **region_kwargs), dtype=out_dtype
-    )
+    if DimensionNames.MosaicTile in bio.reader.dims.order:
+        # A stitched mosaic has no sub-region read: BioImage.get_image_data
+        # falls through to reshape_data(self.data, ...), which materializes the
+        # whole stitched scene -- per shard. Slice the lazy mosaic instead so a
+        # shard costs only the tiles and planes it actually overlaps.
+        shard_data = np.asarray(
+            bio.reader.mosaic_xarray_dask_data.data[src_region], dtype=out_dtype
+        )
+    else:
+        region_kwargs = {
+            native_order[i]: slice(src_region[i].start, src_region[i].stop)
+            for i in range(len(native_order))
+        }
+        # Read the shard via the reader's get_image_data slicing.
+        shard_data = np.asarray(
+            bio.reader.get_image_data(native_order, **region_kwargs), dtype=out_dtype
+        )
 
     # Attach to the store the parent already initialized and write this shard.
     writer = OMEZarrWriter.open(store_path)
@@ -384,6 +393,23 @@ class OmeZarrConverter:
 
         return [Channel(label=lab, color="#FFFFFF") for lab in labels[:channel_count]]
 
+    @property
+    def _is_mosaic(self) -> bool:
+        """True when the reader exposes a scene as mosaic tiles to be stitched."""
+        return DimensionNames.MosaicTile in self.bioimage.reader.dims.order
+
+    def _pixel_source(self) -> Union[BioImage, Reader]:
+        """
+        Whichever of BioImage / its reader defines the axes we convert.
+
+        The reader is the source of truth for everything else: it reports the
+        format's own axes (CYX, CZYX, TCZYX), while ``BioImage`` pads them out to
+        a full TCZYX, which would add singleton axes the source does not have.
+        A mosaic reader is the exception -- there the reader's axes carry an M
+        that only ``BioImage`` resolves, by stitching the tiles into one scene.
+        """
+        return self.bioimage if self._is_mosaic else self.bioimage.reader
+
     def _native_axes_and_shape_for_scene(
         self, scene_index: int
     ) -> Tuple[List[str], Tuple[int, ...]]:
@@ -392,10 +418,10 @@ class OmeZarrConverter:
         axis order & shape. This reflects CYX, CZYX, TCZYX, etc.
         """
         self.bioimage.set_scene(scene_index)
-        r = self.bioimage.reader
-        order = r.dims.order.upper()
+        dims = self._pixel_source().dims
+        order = dims.order.upper()
         axis_names = [c.lower() for c in order]
-        shape = tuple(int(getattr(r.dims, ax)) for ax in order)
+        shape = tuple(int(getattr(dims, ax)) for ax in order)
         return axis_names, shape
 
     def _round_shape(
@@ -535,8 +561,9 @@ class OmeZarrConverter:
         axis_names, level0_shape = self._native_axes_and_shape_for_scene(scene_index)
 
         # (2) Channels
-        r = bio.reader
-        ccount = int(getattr(r.dims, "C", 1)) if "c" in axis_names else 0
+        ccount = (
+            int(getattr(self._pixel_source().dims, "C", 1)) if "c" in axis_names else 0
+        )
         channels = self._resolve_channels(axis_names, ccount)
         pps = self._infer_physical_pixel_sizes(axis_names)
 
@@ -621,8 +648,7 @@ class OmeZarrConverter:
 
         # (6) Read pixels from the reader in its native axis order
         bio.set_scene(scene_index)
-        r = bio.reader
-        native_order = r.dims.order.upper()
+        native_order = self._pixel_source().dims.order.upper()
 
         # (7) Write — each call covers exactly one shard boundary at every
         # pyramid level, so shards can be written in any order independently.
@@ -647,7 +673,9 @@ class OmeZarrConverter:
                 scene_futures.append(pool.submit(_write_shard_process, *task))
         else:
             t_ax = dims.index("T") if "t" in axis_names else None
-            self._write_fallback(writer, r, native_order, t_ax, level0_shape)
+            self._write_fallback(
+                writer, self._pixel_source(), native_order, t_ax, level0_shape
+            )
         return scene_futures
 
     def _resolve_chunk_and_shard_params(
@@ -711,7 +739,7 @@ class OmeZarrConverter:
     def _write_fallback(
         self,
         writer: OMEZarrWriter,
-        reader: Reader,
+        source: Union[BioImage, Reader],
         native_order: str,
         t_ax: Optional[int],
         level0_shape: Tuple[int, ...],
@@ -749,5 +777,5 @@ class OmeZarrConverter:
 
             # get_image_dask_data slices lazily, so .compute() only materializes
             # this batch — not the whole image.
-            batch = reader.get_image_dask_data(native_order, **read_kwargs)
+            batch = source.get_image_dask_data(native_order, **read_kwargs)
             writer.write_region(batch.compute(), tuple(dest_slices))
