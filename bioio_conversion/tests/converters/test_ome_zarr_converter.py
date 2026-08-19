@@ -377,3 +377,39 @@ def test_multiprocess_matches_singleprocess(tmp_path: pathlib.Path) -> None:
             parallel[str(lvl)][...],
             err_msg=f"Level {lvl}: parallel differs from serial",
         )
+
+
+def test_mosaic_source_converts_stitched(tmp_path: pathlib.Path) -> None:
+    """
+    A mosaic source must convert to one stitched scene, not a store of raw
+    tiles. ``tiled.lif``'s reader reports MTCZYX (165 tiles of 512x512) that
+    only BioImage resolves by stitching; planning against the reader's dims
+    would emit a 6D store with an M axis. The output must carry BioImage's
+    stitched TCZYX shape and its stitched pixels exactly, across multiple
+    shards so workers exercise the lazy mosaic slicing path.
+    """
+    src_path = LOCAL_RESOURCES_DIR / "tiled.lif"
+
+    OmeZarrConverter(
+        source=str(src_path),
+        destination=str(tmp_path),
+        name="tiled_stitched",
+        scenes=0,
+        zarr_format=3,
+        shard_limit_bytes=32 * 1024 * 1024,  # ~172 MB scene -> several shards
+        n_workers=2,
+    ).convert()
+
+    store_path = tmp_path / "tiled_stitched.ome.zarr"
+    assert store_path.exists()
+
+    bio_in = BioImage(str(src_path))
+    bio_out = BioImage(str(store_path)).reader
+    bio_out.set_scene(0)
+
+    assert "M" not in bio_out.dims.order
+    assert bio_in.shape == bio_out.shape  # (1, 4, 1, 5622, 7666), stitched
+    assert bio_in.dtype == bio_out.dtype
+    assert list(bio_in.channel_names) == list(bio_out.channel_names)
+
+    assert_array_equal(bio_out.get_image_data(), bio_in.get_image_data())
