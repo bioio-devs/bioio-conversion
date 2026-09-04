@@ -27,8 +27,26 @@ from ..sharding import (
 
 # Bounds are ((lo, hi), ...) per axis — a picklable description of a shard region.
 _Bounds = Tuple[Tuple[int, int], ...]
+# One ``_write_shard_process`` call, as its positional arguments.
+_ShardTask = Tuple[str, str, str, int, str, _Bounds, _Bounds]
 
 DEFAULT_ZARR_FORMAT = 3
+
+# Peak resident bytes for a worker processing shards of S bytes, modelled as
+# ``WORKER_PEAK_SHARD_FACTOR * S + WORKER_FIXED_OVERHEAD_BYTES``.
+#
+# The multiplier is well above 1 because a shard is live several times over: the
+# read buffer, the level-0 copy dask materializes, zarr's assembled shard plus
+# its compressed chunks, and the downsample working set — all overlapping. The
+# fixed term is the interpreter, numpy/zarr/blosc, and the allocator arenas they
+# retain. Both were measured by writing every shard of a store sequentially in
+# one process (the way a pool worker runs) at 128/256/512 MiB shards and fitting
+# peak RSS: ~5.2 * S + ~770 MiB. Rounded up here for headroom.
+#
+# Worth re-measuring on the target platform before trusting it: RSS retention is
+# allocator-specific, and these numbers came from macOS, not from glibc.
+WORKER_PEAK_SHARD_FACTOR = 6
+WORKER_FIXED_OVERHEAD_BYTES = 1024**3
 
 
 def _available_cores() -> int:
@@ -44,6 +62,34 @@ def _available_cores() -> int:
         return max(1, len(psutil.Process().cpu_affinity()))
     except AttributeError:
         return max(1, psutil.cpu_count(logical=False) or 1)
+
+
+def _available_memory_bytes() -> int:
+    """Memory the converter may actually use, in bytes.
+
+    Mirrors :func:`_available_cores`: prefer the cgroup's limit — a SLURM
+    ``--mem`` allocation, a container's memory cap — over the node's free
+    memory, since it is the cgroup that the OOM killer enforces. Falls back to
+    ``psutil`` wherever no cgroup limit is readable (notably macOS).
+    """
+    available = int(psutil.virtual_memory().available)
+    for limit_path, usage_path in (
+        # cgroup v2, then v1. An unlimited v2 limit reads ``max`` and an
+        # unlimited v1 limit is a near-INT64_MAX sentinel; the first is
+        # discarded by ``int`` raising, the second by ``min``.
+        ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+        (
+            "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+            "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+        ),
+    ):
+        try:
+            limit = int(Path(limit_path).read_text())
+            usage = int(Path(usage_path).read_text())
+        except (OSError, ValueError):
+            continue
+        return min(available, max(0, limit - usage))
+    return available
 
 
 def _write_shard_process(
@@ -220,7 +266,9 @@ class OmeZarrConverter:
             Override output data type; defaults to the reader’s dtype.
         n_workers : Optional[int]
             Number of worker processes for shard writes (auto-layout path).
-            Defaults to the number of CPU cores available to the converter.
+            Defaults to the number of CPU cores available to the converter,
+            capped so the pool's resident shards fit the converter's memory
+            budget. An explicit value bypasses that cap.
         shard_limit_bytes : int
             Maximum uncompressed size of a level-0 shard. Default: 4 GiB.
         include_provenance : bool, default = False
@@ -283,10 +331,8 @@ class OmeZarrConverter:
         self._start_t_src = start_t_src
         self._start_t_dest = start_t_dest
         self._tbatch = None if tbatch is None else tbatch
-        # Default to one process per available core (shard writes are GIL-bound
-        # CPU work). _available_cores honors a cgroup/SLURM allocation so we do
-        # not oversubscribe a partial node; it is floored at 1.
-        self._n_workers = n_workers or _available_cores()
+        # None (or 0) means "size the pool at dispatch"; see _worker_count.
+        self._n_workers = n_workers
         self._shard_limit_bytes = shard_limit_bytes
         # Provenance (the "bioio_conversion" attribute block + source-metadata sidecars)
         self._provenance = (
@@ -487,20 +533,58 @@ class OmeZarrConverter:
             if fs.exists(path):
                 raise FileExistsError(f"{path} already exists.")
 
+        # Plan every scene first. Planning touches metadata only — it creates
+        # and initializes each store but reads no pixels — and it is what tells
+        # us how large a shard each worker will hold, which the pool has to be
+        # sized against.
+        tasks: List[_ShardTask] = []
+        shard_nbytes = 0
+        for scene_index in self.scene_indices:
+            scene_tasks, scene_shard_nbytes = self._plan_scene(
+                scene_index, out_paths[scene_index]
+            )
+            tasks.extend(scene_tasks)
+            shard_nbytes = max(shard_nbytes, scene_shard_nbytes)
+
+        # Nothing to dispatch: every scene took the synchronous fallback path,
+        # which has already written itself.
+        if not tasks:
+            return
+
         # A single process pool spans *all* scenes
-        pool = ProcessPoolExecutor(max_workers=self._n_workers)
-        futures: List[Any] = []
-        try:
-            for scene_index in self.scene_indices:
-                futures.extend(
-                    self._plan_and_dispatch_scene(
-                        scene_index, out_paths[scene_index], pool
-                    )
-                )
+        with ProcessPoolExecutor(max_workers=self._worker_count(shard_nbytes)) as pool:
+            futures = [pool.submit(_write_shard_process, *task) for task in tasks]
             for future in futures:
                 future.result()
-        finally:
-            pool.shutdown()
+
+    def _worker_count(self, shard_nbytes: int) -> int:
+        """Number of shard-writer processes to run concurrently.
+
+        An explicit ``n_workers`` always wins. Otherwise start from the cores
+        the converter may run on — shard writes are GIL-bound CPU work, so one
+        process per core is the throughput we want — and cap that at the number
+        of workers whose peak footprint fits the memory budget. Sizing on cores
+        alone is what lets a large-shard conversion OOM: shard size is governed
+        by ``shard_limit_bytes`` (4 GiB by default) and core count by the node,
+        and neither term knows anything about the job's memory budget.
+
+        Note that the cap bites hard at the default shard size — a 4 GiB shard
+        costs roughly 25 GiB of peak RSS per worker — so a memory-constrained
+        job will run few workers. Lowering ``shard_limit_bytes`` is what buys
+        the parallelism back; this only stops the pool from overcommitting.
+        """
+        if self._n_workers:
+            return self._n_workers
+
+        cores = _available_cores()
+        if shard_nbytes <= 0:
+            return cores
+
+        budget = _available_memory_bytes()
+        per_worker = (
+            WORKER_PEAK_SHARD_FACTOR * shard_nbytes + WORKER_FIXED_OVERHEAD_BYTES
+        )
+        return max(1, min(cores, int(budget // per_worker)))
 
     def _output_file_basename_for_scene(self, scene_index: int) -> str:
         """Sanitized output basename (no extension) for a scene's store.
@@ -516,17 +600,18 @@ class OmeZarrConverter:
         )
         return re.sub(r"[<>:\"/\\|?*]", "_", basename)
 
-    def _plan_and_dispatch_scene(
+    def _plan_scene(
         self,
         scene_index: int,
         out_path: str,
-        pool: ProcessPoolExecutor,
-    ) -> List[Any]:
+    ) -> Tuple[List[_ShardTask], int]:
         """
-        Build one scene's store, initialize it, and dispatch its writes.
+        Build one scene's store, initialize it, and plan its writes.
 
-        Returns the list of futures submitted to ``pool`` (empty when the
-        fallback single-threaded path is used).
+        Returns the scene's shard-write tasks along with the size in bytes of
+        one level-0 shard, which sizes the pool the tasks run on. The list is
+        empty (and the size 0) when the fallback single-threaded path is used,
+        since that path writes the scene here and now.
         """
         bio = self.bioimage
         base = self._output_file_basename_for_scene(scene_index)
@@ -629,26 +714,32 @@ class OmeZarrConverter:
         writer.initialize()
         write_sidecars(out_path, bioio_sidecars)
 
-        scene_futures: List[Any] = []
+        scene_tasks: List[_ShardTask] = []
+        shard_nbytes = 0
         if can_auto_layout:
             out_dtype_str = str(self.output_dtype)
+            shard_nbytes = (
+                int(np.prod(writer_shard_shape_param[0], dtype=np.int64))
+                * self.output_dtype.itemsize
+            )
             for src_bounds, dest_bounds in self._scene_shard_bounds(
                 writer_shard_shape_param, level0_shape
             ):
-                task = (
-                    self.source,
-                    str(out_path),
-                    native_order,
-                    scene_index,
-                    out_dtype_str,
-                    src_bounds,
-                    dest_bounds,
+                scene_tasks.append(
+                    (
+                        self.source,
+                        str(out_path),
+                        native_order,
+                        scene_index,
+                        out_dtype_str,
+                        src_bounds,
+                        dest_bounds,
+                    )
                 )
-                scene_futures.append(pool.submit(_write_shard_process, *task))
         else:
             t_ax = dims.index("T") if "t" in axis_names else None
             self._write_fallback(writer, r, native_order, t_ax, level0_shape)
-        return scene_futures
+        return scene_tasks, shard_nbytes
 
     def _resolve_chunk_and_shard_params(
         self,
