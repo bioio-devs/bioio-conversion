@@ -69,7 +69,6 @@ def _write_shard_process(
     """
     src_region = tuple(slice(lo, hi) for lo, hi in src_bounds)
     dest_region = tuple(slice(lo, hi) for lo, hi in dest_bounds)
-    out_dtype = np.dtype(out_dtype_str)
 
     # New image instance to access data per process
     bio = BioImage(source)
@@ -78,10 +77,8 @@ def _write_shard_process(
         native_order[i]: slice(src_region[i].start, src_region[i].stop)
         for i in range(len(native_order))
     }
-    # Read the shard via the reader's get_image_data slicing.
-    shard_data = np.asarray(
-        bio.reader.get_image_data(native_order, **region_kwargs), dtype=out_dtype
-    )
+    # Read the shard via the reader's get_image_dask_data slicing.
+    shard_data = bio.reader.get_image_dask_data(native_order, **region_kwargs).astype(out_dtype_str, copy=False)
 
     # Attach to the store the parent already initialized and write this shard.
     writer = OMEZarrWriter.open(store_path)
