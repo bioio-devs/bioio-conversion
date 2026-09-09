@@ -69,11 +69,12 @@ def test_file_to_zarr_multi_scene(
     conv.convert()
 
     # Assert
+    source_is_multi_scene = len(bio_probe.scenes) > 1
     for idx in expected_scenes:
         scene_name = bio_probe.scenes[idx]
         out_name = (
             f"{base}_converted_{scene_name}"
-            if len(expected_scenes) > 1
+            if source_is_multi_scene
             else f"{base}_converted"
         )
         safe_name = re.sub(r'[<>:"/\\|?*]', "_", out_name)
@@ -93,14 +94,15 @@ def test_file_to_zarr_multi_scene(
 
 
 @pytest.mark.parametrize(
-    "filename, num_levels, downsample_z, expected_shapes",
+    "filename, num_levels, downsample_z, expected_shapes, expected_zarr_name",
     [
-        # TIFF (TCZYX)
+        # TIFF (TCZYX) — s_3 is multi-scene; scene 0 = "Image:0" → "Image_0"
         (
             "s_3_t_1_c_3_z_5.ome.tiff",
             1,
             False,
             [(1, 3, 5, 325, 475)],  # L0 only
+            "resolution_test_Image_0.ome.zarr",
         ),
         (
             "s_3_t_1_c_3_z_5.ome.tiff",
@@ -111,6 +113,7 @@ def test_file_to_zarr_multi_scene(
                 (1, 3, 5, 162, 238),
                 (1, 3, 5, 81, 119),
             ],
+            "resolution_test_Image_0.ome.zarr",
         ),
         (
             "s_3_t_1_c_3_z_5.ome.tiff",
@@ -121,6 +124,7 @@ def test_file_to_zarr_multi_scene(
                 (1, 3, 2, 162, 238),
                 (1, 3, 1, 81, 119),
             ],
+            "resolution_test_Image_0.ome.zarr",
         ),
         (
             "s_1_t_1_c_1_z_1.ome.tiff",
@@ -131,8 +135,9 @@ def test_file_to_zarr_multi_scene(
                 (1, 1, 1, 162, 238),
                 (1, 1, 1, 81, 119),
             ],
+            "resolution_test.ome.zarr",
         ),
-        # CZI (CYX)
+        # CZI (CYX) — s_1 is single-scene
         (
             "s_1_t_1_c_1_z_1.czi",
             3,
@@ -142,8 +147,9 @@ def test_file_to_zarr_multi_scene(
                 (1, 162, 238),
                 (1, 81, 119),
             ],
+            "resolution_test.ome.zarr",
         ),
-        # CZI (CZYX)
+        # CZI (CZYX) — s_3 is multi-scene; scene 0 = "P2"
         (
             "s_3_t_1_c_3_z_5.czi",
             2,
@@ -152,6 +158,7 @@ def test_file_to_zarr_multi_scene(
                 (3, 5, 325, 475),
                 (3, 2, 162, 238),
             ],
+            "resolution_test_P2.ome.zarr",
         ),
     ],
     ids=[
@@ -169,6 +176,7 @@ def test_zarr_resolution_levels(
     num_levels: int,
     downsample_z: bool,
     expected_shapes: List[Tuple[int, ...]],
+    expected_zarr_name: str,
 ) -> None:
     # Arrange
     src_path = LOCAL_RESOURCES_DIR / filename
@@ -188,7 +196,7 @@ def test_zarr_resolution_levels(
     conv.convert()
 
     # Assert
-    reader = BioImage(out_dir / f"{zarr_name}.ome.zarr").reader
+    reader = BioImage(str(out_dir / expected_zarr_name)).reader
     exp_levels = tuple(range(len(expected_shapes)))
     assert tuple(reader.resolution_levels) == exp_levels
 
@@ -197,8 +205,9 @@ def test_zarr_resolution_levels(
 
 
 @pytest.mark.parametrize(
-    "filename, explicit_shapes",
+    "filename, explicit_shapes, expected_zarr_name",
     [
+        # s_3 is multi-scene; scene 0 = "Image:0" → "Image_0"
         (
             "s_3_t_1_c_3_z_5.ome.tiff",
             [
@@ -206,6 +215,7 @@ def test_zarr_resolution_levels(
                 (1, 3, 2, 162, 238),
                 (1, 3, 1, 81, 119),
             ],
+            "explicit_shapes_Image_0.ome.zarr",
         ),
         (
             "s_1_t_1_c_1_z_1.ome.tiff",
@@ -214,6 +224,7 @@ def test_zarr_resolution_levels(
                 (1, 1, 1, 162, 238),
                 (1, 1, 1, 81, 119),
             ],
+            "explicit_shapes.ome.zarr",
         ),
         (
             "s_1_t_1_c_1_z_1.czi",
@@ -222,7 +233,9 @@ def test_zarr_resolution_levels(
                 (1, 162, 238),
                 (1, 81, 119),
             ],
+            "explicit_shapes.ome.zarr",
         ),
+        # s_3 czi is multi-scene; scene 0 = "P2"
         (
             "s_3_t_1_c_3_z_5.czi",
             [
@@ -230,6 +243,7 @@ def test_zarr_resolution_levels(
                 (3, 2, 162, 238),
                 (3, 1, 81, 119),
             ],
+            "explicit_shapes_P2.ome.zarr",
         ),
     ],
     ids=[
@@ -243,6 +257,7 @@ def test_zarr_explicit_level_shapes(
     tmp_path: pathlib.Path,
     filename: str,
     explicit_shapes: List[Tuple[int, ...]],
+    expected_zarr_name: str,
 ) -> None:
     # Arrange
     src_path = LOCAL_RESOURCES_DIR / filename
@@ -261,7 +276,7 @@ def test_zarr_explicit_level_shapes(
     conv.convert()
 
     # Assert
-    reader = BioImage(out_dir / f"{zarr_name}.ome.zarr").reader
+    reader = BioImage(str(out_dir / expected_zarr_name)).reader
     assert tuple(reader.resolution_levels) == tuple(range(len(explicit_shapes)))
     actual_shapes = [
         tuple(reader.resolution_level_dims[i]) for i in range(len(explicit_shapes))
@@ -275,14 +290,18 @@ def test_zarr_explicit_level_shapes(
 
 
 @pytest.mark.parametrize(
-    "filename",
-    ["s_3_t_1_c_3_z_5.czi", "s_3_t_1_c_3_z_5.ome.tiff"],
+    "filename, expected_zarr_name",
+    [
+        ("s_3_t_1_c_3_z_5.czi", "region_correct_P2.ome.zarr"),
+        ("s_3_t_1_c_3_z_5.ome.tiff", "region_correct_Image_0.ome.zarr"),
+    ],
     ids=["czi", "tiff"],
 )
 @pytest.mark.parametrize("n_workers", [1, 2], ids=["1proc", "2proc"])
 def test_conversion_pixel_correctness(
     tmp_path: pathlib.Path,
     filename: str,
+    expected_zarr_name: str,
     n_workers: int,
 ) -> None:
     """
@@ -303,7 +322,7 @@ def test_conversion_pixel_correctness(
         n_workers=n_workers,
     ).convert()
 
-    store_path = tmp_path / "region_correct.ome.zarr"
+    store_path = tmp_path / expected_zarr_name
     assert store_path.exists()
 
     bio_in = BioImage(str(src_path)).reader
@@ -364,7 +383,7 @@ def test_multiprocess_matches_singleprocess(tmp_path: pathlib.Path) -> None:
             shard_limit_bytes=_TEST_SHARD_LIMIT,
             n_workers=n_workers,
         ).convert()
-        return str(tmp_path / f"{name}.ome.zarr")
+        return str(tmp_path / f"{name}_P2.ome.zarr")
 
     serial = zarr.open_group(_convert("serial", 1), mode="r")
     parallel = zarr.open_group(_convert("parallel", 2), mode="r")

@@ -69,22 +69,27 @@ def _provenance(store_path: Union[str, pathlib.Path]) -> dict:
 
 
 @pytest.mark.parametrize(
-    "src_name, plugin, scene_index",
+    "src_name, plugin, scene_index, expected_zarr_name",
     [
-        ("s_1_t_1_c_1_z_1.ome.tiff", "bioio-ome-tiff", 0),
-        ("s_3_t_1_c_3_z_5.ome.tiff", "bioio-ome-tiff", 0),
-        ("s_3_t_1_c_3_z_5.ome.tiff", "bioio-ome-tiff", 2),
-        ("s_1_t_1_c_1_z_1.czi", "bioio-czi", 0),
-        ("s_3_t_1_c_3_z_5.czi", "bioio-czi", 0),
-        ("s_3_t_1_c_3_z_5.czi", "bioio-czi", 2),
-        ("ND2_dims_t3c2y32x32.nd2", "bioio-nd2", 0),
+        ("s_1_t_1_c_1_z_1.ome.tiff", "bioio-ome-tiff", 0, "out.ome.zarr"),
+        ("s_3_t_1_c_3_z_5.ome.tiff", "bioio-ome-tiff", 0, "out_Image_0.ome.zarr"),
+        ("s_3_t_1_c_3_z_5.ome.tiff", "bioio-ome-tiff", 2, "out_Image_2.ome.zarr"),
+        ("s_1_t_1_c_1_z_1.czi", "bioio-czi", 0, "out.ome.zarr"),
+        ("s_3_t_1_c_3_z_5.czi", "bioio-czi", 0, "out_P2.ome.zarr"),
+        ("s_3_t_1_c_3_z_5.czi", "bioio-czi", 2, "out_P1.ome.zarr"),
+        ("ND2_dims_t3c2y32x32.nd2", "bioio-nd2", 0, "out.ome.zarr"),
     ],
 )
 def test_provenance_attributes(
-    tmp_path: pathlib.Path, src_name: str, plugin: str, scene_index: int
+    tmp_path: pathlib.Path,
+    src_name: str,
+    plugin: str,
+    scene_index: int,
+    expected_zarr_name: str,
 ) -> None:
     _convert(tmp_path, src_name, "out", scenes=scene_index)
-    attrs = _root_attrs(tmp_path / "out.ome.zarr")
+    store = tmp_path / expected_zarr_name
+    attrs = _root_attrs(store)
     assert PROVENANCE_ATTR_KEY in attrs
     bioio = attrs[PROVENANCE_ATTR_KEY]
 
@@ -92,8 +97,6 @@ def test_provenance_attributes(
     assert bioio[PLUGIN_KEY] == plugin
     assert {*TRACKED_PACKAGES, plugin} <= set(bioio[PACKAGE_VERSIONS_KEY])
     datetime.datetime.fromisoformat(bioio[CONVERTED_KEY])
-
-    store = tmp_path / "out.ome.zarr"
     assert bioio[STANDARD_METADATA_KEY] == STANDARD_METADATA_PATH
     sm = _read_json(store, bioio[STANDARD_METADATA_KEY])
 
@@ -108,24 +111,29 @@ def test_provenance_attributes(
 
 
 @pytest.mark.parametrize(
-    "src_name, expected_sidecars",
+    "src_name, expected_sidecars, expected_zarr_name",
     [
         (
             "s_1_t_1_c_1_z_1.czi",
             [NATIVE_METADATA_PATH, OME_METADATA_PATH, STANDARD_METADATA_PATH],
+            "s.ome.zarr",
         ),
         (
             "s_3_t_1_c_3_z_5.ome.tiff",
             [OME_METADATA_PATH, STANDARD_METADATA_PATH],
+            "s_Image_0.ome.zarr",
         ),
     ],
 )
 def test_metadata_json_sidecars(
-    tmp_path: pathlib.Path, src_name: str, expected_sidecars: list
+    tmp_path: pathlib.Path,
+    src_name: str,
+    expected_sidecars: list,
+    expected_zarr_name: str,
 ) -> None:
     """Native, OME, and standard metadata are written as JSON sidecars."""
     _convert(str(tmp_path), src_name, "s")
-    store = f"{str(tmp_path)}/s.ome.zarr"
+    store = str(tmp_path / expected_zarr_name)
     bioio = _provenance(store)
 
     native = _read_json(store, bioio[NATIVE_METADATA_KEY])
@@ -158,7 +166,7 @@ def test_czi_subblock_metadata_embedded(tmp_path: pathlib.Path) -> None:
             "include_subblock_metadata": True,
         },
     )
-    store = tmp_path / "czi.ome.zarr"
+    store = tmp_path / "czi_P2.ome.zarr"
     native = _read_json(store, _provenance(store)[NATIVE_METADATA_KEY])
     subblocks = native["ImageDocument"]["Subblocks"]["Subblock"]
     assert subblocks, "no Subblocks (aicspylibczi?)"
@@ -180,7 +188,7 @@ def test_nd2_provenance_use_plate_96(tmp_path: pathlib.Path) -> None:
         provenance_reader_kwargs={"plate": "96"},
     )
 
-    store = tmp_path / "out.ome.zarr"
+    store = tmp_path / "out_point name 1.ome.zarr"
     sm = _read_json(store, _provenance(store)[STANDARD_METADATA_KEY])
 
     ref = ND2Reader(src, plate="96")

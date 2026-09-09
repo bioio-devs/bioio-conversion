@@ -32,8 +32,11 @@ def test_run_jobs_from_list(tmp_path: Path) -> None:
     bc.run_jobs(jobs)
 
     # Assert
-    for src in (tiff1, tiff2):
-        out_zarr = tmp_path / f"{src.stem}.ome.zarr"
+    expected = {
+        tiff1: tmp_path / "s_1_t_1_c_1_z_1.ome.zarr",
+        tiff2: tmp_path / "s_3_t_1_c_3_z_5_Image_0.ome.zarr",
+    }
+    for src, out_zarr in expected.items():
         assert out_zarr.is_dir(), f"Missing output for {src.name}"
 
         bio_in = BioImage(str(src))
@@ -101,14 +104,17 @@ def test_run_jobs_from_directory_three_levels(
     # Run each job individually, cleaning up output before each run
     for job in jobs:
         src_file = Path(job.get("src") or job.get("source") or job["input"])
-        out_zarr = tmp_path / f"{src_file.stem}.ome.zarr"
-        if out_zarr.exists():
-            shutil.rmtree(out_zarr)
+        base = src_file.with_suffix("").stem
+        for existing in tmp_path.glob(f"{base}*.ome.zarr"):
+            shutil.rmtree(existing)
         bc.run_jobs([job])
 
     # Assert
-    for src in samples:
-        out_zarr = tmp_path / f"{src.stem}.ome.zarr"
+    expected = {
+        samples[0]: tmp_path / "s_1_t_1_c_1_z_1.ome.zarr",
+        samples[1]: tmp_path / "s_3_t_1_c_3_z_5_Image_0.ome.zarr",
+    }
+    for src, out_zarr in expected.items():
         assert out_zarr.is_dir(), f"Missing output for {src.name}"
 
         bio_in = BioImage(str(src))
@@ -154,8 +160,11 @@ def test_run_jobs_from_csv(tmp_path: Path) -> None:
     bc.run_jobs(jobs)
 
     # Assert
-    for src in (tiff1, tiff2):
-        out_z = tmp_path / "out_csv" / f"{src.stem}.ome.zarr"
+    expected = {
+        tiff1: tmp_path / "out_csv" / "s_1_t_1_c_1_z_1.ome.zarr",
+        tiff2: tmp_path / "out_csv" / "s_3_t_1_c_3_z_5_Image_0.ome.zarr",
+    }
+    for src, out_z in expected.items():
         assert out_z.is_dir(), f"Missing output for {src.name}"
 
         bio_in = BioImage(str(src))
@@ -169,10 +178,7 @@ def test_run_jobs_from_csv(tmp_path: Path) -> None:
         assert bio_in.channel_names == bio_out.channel_names
 
         # Pixel data match
-        assert_array_equal(
-            bio_out.get_image_data(),
-            bio_in.get_image_data(),
-        )
+        assert_array_equal(bio_out.get_image_data(), bio_in.get_image_data())
     assert len(jobs) == 2
     assert str(tiff1) in parsed_srcs
     assert str(tiff2) in parsed_srcs
