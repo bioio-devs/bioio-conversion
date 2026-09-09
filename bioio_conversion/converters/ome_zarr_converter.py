@@ -236,7 +236,7 @@ class OmeZarrConverter:
         """
         self.source = source
         self.destination = destination or str(Path.cwd())
-        self.output_basename = name or Path(source).stem
+        self.output_basename = name or Path(source).name.split(".")[0]
 
         self.bioimage = BioImage(self.source)
         self.scene_names = self.bioimage.scenes

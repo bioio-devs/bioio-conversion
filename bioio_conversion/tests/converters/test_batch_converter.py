@@ -1,5 +1,4 @@
 import csv
-import re
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -11,17 +10,6 @@ from numpy.testing import assert_array_equal
 from bioio_conversion.converters.batch_converter import BatchConverter
 
 from ..conftest import LOCAL_RESOURCES_DIR
-
-
-def _expected_zarr(out_dir: Path, src: Path, scene_idx: int) -> Path:
-    """Compute expected .ome.zarr path for a single-scene conversion."""
-    bio = BioImage(str(src))
-    stem = src.stem
-    if len(bio.scenes) > 1:
-        scene_name = bio.scenes[scene_idx]
-        safe = re.sub(r'[<>:"/\\|?*]', "_", f"{stem}_{scene_name}")
-        return out_dir / f"{safe}.ome.zarr"
-    return out_dir / f"{stem}.ome.zarr"
 
 
 def test_run_jobs_from_list(tmp_path: Path) -> None:
@@ -43,9 +31,11 @@ def test_run_jobs_from_list(tmp_path: Path) -> None:
     # Run conversions
     bc.run_jobs(jobs)
 
-    # Assert
-    for src in (tiff1, tiff2):
-        out_zarr = _expected_zarr(tmp_path, src, 0)
+    expected = {
+        tiff1: tmp_path / "s_1_t_1_c_1_z_1.ome.zarr",
+        tiff2: tmp_path / "s_3_t_1_c_3_z_5_Image_0.ome.zarr",
+    }
+    for src, out_zarr in expected.items():
         assert out_zarr.is_dir(), f"Missing output for {src.name}"
 
         bio_in = BioImage(str(src))
@@ -110,17 +100,18 @@ def test_run_jobs_from_directory_three_levels(
     else:
         jobs = bc.from_directory(tmp_path, max_depth=max_depth, pattern="*.ome.tiff")
 
-    # Run each job individually, cleaning up output before each run
     for job in jobs:
         src_file = Path(job.get("src") or job.get("source") or job["input"])
-        out_zarr = _expected_zarr(tmp_path, src_file, 0)
-        if out_zarr.exists():
-            shutil.rmtree(out_zarr)
+        base = src_file.with_suffix("").stem
+        for existing in tmp_path.glob(f"{base}*.ome.zarr"):
+            shutil.rmtree(existing)
         bc.run_jobs([job])
 
-    # Assert
-    for src in samples:
-        out_zarr = _expected_zarr(tmp_path, src, 0)
+    expected = {
+        samples[0]: tmp_path / "s_1_t_1_c_1_z_1.ome.zarr",
+        samples[1]: tmp_path / "s_3_t_1_c_3_z_5_Image_0.ome.zarr",
+    }
+    for src, out_zarr in expected.items():
         assert out_zarr.is_dir(), f"Missing output for {src.name}"
 
         bio_in = BioImage(str(src))
@@ -165,9 +156,11 @@ def test_run_jobs_from_csv(tmp_path: Path) -> None:
     # Run Conversions
     bc.run_jobs(jobs)
 
-    # Assert
-    for src in (tiff1, tiff2):
-        out_z = _expected_zarr(tmp_path / "out_csv", src, 0)
+    expected = {
+        tiff1: tmp_path / "out_csv" / "s_1_t_1_c_1_z_1.ome.zarr",
+        tiff2: tmp_path / "out_csv" / "s_3_t_1_c_3_z_5_Image_0.ome.zarr",
+    }
+    for src, out_z in expected.items():
         assert out_z.is_dir(), f"Missing output for {src.name}"
 
         bio_in = BioImage(str(src))
@@ -175,16 +168,10 @@ def test_run_jobs_from_csv(tmp_path: Path) -> None:
         bio_out = BioImage(str(out_z))
         bio_out.set_scene(0)
 
-        # Metadata match
         assert bio_in.shape == bio_out.shape
         assert bio_in.dtype == bio_out.dtype
         assert bio_in.channel_names == bio_out.channel_names
-
-        # Pixel data match
-        assert_array_equal(
-            bio_out.get_image_data(),
-            bio_in.get_image_data(),
-        )
+        assert_array_equal(bio_out.get_image_data(), bio_in.get_image_data())
     assert len(jobs) == 2
     assert str(tiff1) in parsed_srcs
     assert str(tiff2) in parsed_srcs
