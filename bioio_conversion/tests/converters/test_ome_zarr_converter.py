@@ -101,7 +101,7 @@ def test_file_to_zarr_multi_scene(
             "s_3_t_1_c_3_z_5.ome.tiff",
             1,
             False,
-            [(1, 3, 5, 325, 475)],
+            [(1, 3, 5, 325, 475)],  # L0 only
             "resolution_test_Image_0.ome.zarr",
         ),
         (

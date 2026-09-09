@@ -31,6 +31,7 @@ def test_run_jobs_from_list(tmp_path: Path) -> None:
     # Run conversions
     bc.run_jobs(jobs)
 
+    # Assert
     expected = {
         tiff1: tmp_path / "s_1_t_1_c_1_z_1.ome.zarr",
         tiff2: tmp_path / "s_3_t_1_c_3_z_5_Image_0.ome.zarr",
@@ -100,6 +101,7 @@ def test_run_jobs_from_directory_three_levels(
     else:
         jobs = bc.from_directory(tmp_path, max_depth=max_depth, pattern="*.ome.tiff")
 
+    # Run each job individually, cleaning up output before each run
     for job in jobs:
         src_file = Path(job.get("src") or job.get("source") or job["input"])
         base = src_file.with_suffix("").stem
@@ -107,6 +109,7 @@ def test_run_jobs_from_directory_three_levels(
             shutil.rmtree(existing)
         bc.run_jobs([job])
 
+    # Assert
     expected = {
         samples[0]: tmp_path / "s_1_t_1_c_1_z_1.ome.zarr",
         samples[1]: tmp_path / "s_3_t_1_c_3_z_5_Image_0.ome.zarr",
@@ -156,6 +159,7 @@ def test_run_jobs_from_csv(tmp_path: Path) -> None:
     # Run Conversions
     bc.run_jobs(jobs)
 
+    # Assert
     expected = {
         tiff1: tmp_path / "out_csv" / "s_1_t_1_c_1_z_1.ome.zarr",
         tiff2: tmp_path / "out_csv" / "s_3_t_1_c_3_z_5_Image_0.ome.zarr",
@@ -168,9 +172,12 @@ def test_run_jobs_from_csv(tmp_path: Path) -> None:
         bio_out = BioImage(str(out_z))
         bio_out.set_scene(0)
 
+        # Metadata match
         assert bio_in.shape == bio_out.shape
         assert bio_in.dtype == bio_out.dtype
         assert bio_in.channel_names == bio_out.channel_names
+
+        # Pixel data match
         assert_array_equal(bio_out.get_image_data(), bio_in.get_image_data())
     assert len(jobs) == 2
     assert str(tiff1) in parsed_srcs
