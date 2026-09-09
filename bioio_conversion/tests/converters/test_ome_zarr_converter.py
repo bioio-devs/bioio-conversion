@@ -69,11 +69,12 @@ def test_file_to_zarr_multi_scene(
     conv.convert()
 
     # Assert
+    source_is_multi_scene = len(bio_probe.scenes) > 1
     for idx in expected_scenes:
         scene_name = bio_probe.scenes[idx]
         out_name = (
             f"{base}_converted_{scene_name}"
-            if len(expected_scenes) > 1
+            if source_is_multi_scene
             else f"{base}_converted"
         )
         safe_name = re.sub(r'[<>:"/\\|?*]', "_", out_name)

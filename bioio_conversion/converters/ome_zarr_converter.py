@@ -505,13 +505,14 @@ class OmeZarrConverter:
     def _output_file_basename_for_scene(self, scene_index: int) -> str:
         """Sanitized output basename (no extension) for a scene's store.
 
-        Single-scene conversions use the base name as-is; multi-scene runs
-        suffix each store with the scene name.
+        Single-scene source files use the base name as-is; multi-scene sources
+        suffix each store with the scene name, even when only one scene is exported.
         """
         scene_name = self.scene_names[scene_index]
+        source_is_single_scene = len(self.scene_names) == 1
         basename = (
             self.output_basename
-            if len(self.scene_indices) == 1
+            if source_is_single_scene
             else f"{self.output_basename}_{scene_name}"
         )
         return re.sub(r"[<>:\"/\\|?*]", "_", basename)
