@@ -12,6 +12,20 @@ from bioio_conversion.converters.ome_zarr_converter import OmeZarrConverter
 from ..conftest import LOCAL_RESOURCES_DIR
 
 # Small shard limit used across multi-shard tests.
+
+
+def _zarr_out(
+    tmp_path: pathlib.Path, name: str, src_path: pathlib.Path, scene_idx: int
+) -> pathlib.Path:
+    """Return the expected .ome.zarr path accounting for scene-name suffix."""
+    bio = BioImage(str(src_path))
+    if len(bio.scenes) > 1:
+        scene_name = bio.scenes[scene_idx]
+        safe = re.sub(r'[<>:"/\\|?*]', "_", f"{name}_{scene_name}")
+        return tmp_path / f"{safe}.ome.zarr"
+    return tmp_path / f"{name}.ome.zarr"
+
+
 # Forcing one-chunk-per-shard exercises the concurrent write path with multiple
 # shards even on tiny images where a 4 GiB shard would hold the entire array.
 _TEST_SHARD_LIMIT = 256 * 1024  # 256 KiB — used for integration tests
@@ -189,7 +203,7 @@ def test_zarr_resolution_levels(
     conv.convert()
 
     # Assert
-    reader = BioImage(out_dir / f"{zarr_name}.ome.zarr").reader
+    reader = BioImage(str(_zarr_out(out_dir, zarr_name, src_path, 0))).reader
     exp_levels = tuple(range(len(expected_shapes)))
     assert tuple(reader.resolution_levels) == exp_levels
 
@@ -262,7 +276,7 @@ def test_zarr_explicit_level_shapes(
     conv.convert()
 
     # Assert
-    reader = BioImage(out_dir / f"{zarr_name}.ome.zarr").reader
+    reader = BioImage(str(_zarr_out(out_dir, zarr_name, src_path, 0))).reader
     assert tuple(reader.resolution_levels) == tuple(range(len(explicit_shapes)))
     actual_shapes = [
         tuple(reader.resolution_level_dims[i]) for i in range(len(explicit_shapes))
@@ -304,7 +318,7 @@ def test_conversion_pixel_correctness(
         n_workers=n_workers,
     ).convert()
 
-    store_path = tmp_path / "region_correct.ome.zarr"
+    store_path = _zarr_out(tmp_path, "region_correct", src_path, 0)
     assert store_path.exists()
 
     bio_in = BioImage(str(src_path)).reader
@@ -365,7 +379,7 @@ def test_multiprocess_matches_singleprocess(tmp_path: pathlib.Path) -> None:
             shard_limit_bytes=_TEST_SHARD_LIMIT,
             n_workers=n_workers,
         ).convert()
-        return str(tmp_path / f"{name}.ome.zarr")
+        return str(_zarr_out(tmp_path, name, src_path, 0))
 
     serial = zarr.open_group(_convert("serial", 1), mode="r")
     parallel = zarr.open_group(_convert("parallel", 2), mode="r")

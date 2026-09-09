@@ -1,5 +1,6 @@
 import csv
 import pathlib
+import re
 import shutil
 
 import pytest
@@ -10,6 +11,18 @@ from numpy.testing import assert_array_equal
 from bioio_conversion.bin.cli_batch_convert import main as batch_main
 
 from .conftest import LOCAL_RESOURCES_DIR
+
+
+def _expected_zarr(
+    out_dir: pathlib.Path, src: pathlib.Path, scene_idx: int
+) -> pathlib.Path:
+    bio = BioImage(str(src))
+    stem = src.stem
+    if len(bio.scenes) > 1:
+        scene_name = bio.scenes[scene_idx]
+        safe = re.sub(r'[<>:"/\\|?*]', "_", f"{stem}_{scene_name}")
+        return out_dir / f"{safe}.ome.zarr"
+    return out_dir / f"{stem}.ome.zarr"
 
 
 # ---------------------------------------------------------------------
@@ -78,7 +91,7 @@ def test_batch_cli_list_mode(
     out_dir = tmp_path / "list_out"
     out_dir.mkdir(exist_ok=True)
 
-    out_zarr = out_dir / f"{src.stem}.ome.zarr"
+    out_zarr = _expected_zarr(out_dir, src, scene_index)
     if out_zarr.exists():
         shutil.rmtree(out_zarr)
 
@@ -152,7 +165,7 @@ def test_batch_cli_csv_mode(tmp_path: pathlib.Path) -> None:
 
     for src_name in ["s_1_t_1_c_1_z_1.ome.tiff", "s_3_t_1_c_3_z_5.ome.tiff"]:
         src = LOCAL_RESOURCES_DIR / src_name
-        out_z = out_dir / f"{src.stem}.ome.zarr"
+        out_z = _expected_zarr(out_dir, src, 0)
         assert out_z.is_dir(), f"Missing CSV output for {src.name}"
 
         bio_in = BioImage(str(src))
@@ -225,8 +238,8 @@ def test_batch_cli_dir_mode(
     # Assert
     assert result.exit_code == 0, result.output
 
-    out_top = out_dir / f"{top_file.stem}.ome.zarr"
-    out_sub = out_dir / f"{sub_file.stem}.ome.zarr"
+    out_top = _expected_zarr(out_dir, top_file, 0)
+    out_sub = _expected_zarr(out_dir, sub_file, 0)
 
     assert out_top.is_dir()
     if expect_subdir_output:

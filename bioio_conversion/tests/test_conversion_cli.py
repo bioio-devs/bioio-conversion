@@ -1,5 +1,6 @@
 import json
 import pathlib
+import re
 from typing import List, Tuple
 
 import pytest
@@ -16,6 +17,17 @@ from bioio_conversion.provenance import (
 )
 
 from .conftest import LOCAL_RESOURCES_DIR
+
+
+def _zarr_out(
+    out_dir: pathlib.Path, name: str, src_path: pathlib.Path, scene_idx: int
+) -> pathlib.Path:
+    bio = BioImage(str(src_path))
+    if len(bio.scenes) > 1:
+        scene_name = bio.scenes[scene_idx]
+        safe = re.sub(r'[<>:"/\\|?*]', "_", f"{name}_{scene_name}")
+        return out_dir / f"{safe}.ome.zarr"
+    return out_dir / f"{name}.ome.zarr"
 
 
 @pytest.mark.parametrize(
@@ -50,7 +62,7 @@ def test_cli_file_to_zarr(
 
     # Assert
     assert result.exit_code == 0, result.output
-    zarr_path = tmp_path / f"{out_name}.ome.zarr"
+    zarr_path = _zarr_out(tmp_path, out_name, tiff, scene_index)
     assert zarr_path.exists()
 
     bio_in = BioImage(str(tiff))
@@ -122,7 +134,7 @@ def test_cli_zarr_resolution_levels(
     # Assert
     assert result.exit_code == 0, result.output
 
-    bio = BioImage(str(out_dir / f"{zarr_name}.ome.zarr"))
+    bio = BioImage(str(_zarr_out(out_dir, zarr_name, tiff_path, 0)))
     bio.set_scene(0)
 
     assert tuple(bio.resolution_levels) == expected_levels
@@ -186,7 +198,7 @@ def test_cli_provenance_reader_kwargs(tmp_path: pathlib.Path) -> None:
 
     # Assert
     assert result.exit_code == 0, result.output
-    store = tmp_path / "plate.ome.zarr"
+    store = _zarr_out(tmp_path, "plate", nd2, 0)
     with open(store / _provenance_block(store)[STANDARD_METADATA_KEY]) as fh:
         sm = json.load(fh)
 

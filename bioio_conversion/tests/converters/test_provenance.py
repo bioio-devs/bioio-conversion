@@ -2,6 +2,7 @@ import dataclasses
 import datetime
 import json
 import pathlib
+import re
 from typing import Optional, Union
 
 import fsspec
@@ -27,6 +28,17 @@ from bioio_conversion.provenance import (
 )
 
 from ..conftest import LOCAL_RESOURCES_DIR
+
+
+def _zarr_out(
+    destination: pathlib.Path, name: str, src_path: pathlib.Path, scene_idx: int
+) -> pathlib.Path:
+    bio = BioImage(str(src_path))
+    if len(bio.scenes) > 1:
+        scene_name = bio.scenes[scene_idx]
+        safe = re.sub(r'[<>:"/\\|?*]', "_", f"{name}_{scene_name}")
+        return pathlib.Path(destination) / f"{safe}.ome.zarr"
+    return pathlib.Path(destination) / f"{name}.ome.zarr"
 
 
 def _convert(
@@ -84,7 +96,8 @@ def test_provenance_attributes(
     tmp_path: pathlib.Path, src_name: str, plugin: str, scene_index: int
 ) -> None:
     _convert(tmp_path, src_name, "out", scenes=scene_index)
-    attrs = _root_attrs(tmp_path / "out.ome.zarr")
+    store = _zarr_out(tmp_path, "out", LOCAL_RESOURCES_DIR / src_name, scene_index)
+    attrs = _root_attrs(store)
     assert PROVENANCE_ATTR_KEY in attrs
     bioio = attrs[PROVENANCE_ATTR_KEY]
 
@@ -92,8 +105,6 @@ def test_provenance_attributes(
     assert bioio[PLUGIN_KEY] == plugin
     assert {*TRACKED_PACKAGES, plugin} <= set(bioio[PACKAGE_VERSIONS_KEY])
     datetime.datetime.fromisoformat(bioio[CONVERTED_KEY])
-
-    store = tmp_path / "out.ome.zarr"
     assert bioio[STANDARD_METADATA_KEY] == STANDARD_METADATA_PATH
     sm = _read_json(store, bioio[STANDARD_METADATA_KEY])
 
@@ -125,7 +136,7 @@ def test_metadata_json_sidecars(
 ) -> None:
     """Native, OME, and standard metadata are written as JSON sidecars."""
     _convert(str(tmp_path), src_name, "s")
-    store = f"{str(tmp_path)}/s.ome.zarr"
+    store = str(_zarr_out(tmp_path, "s", LOCAL_RESOURCES_DIR / src_name, 0))
     bioio = _provenance(store)
 
     native = _read_json(store, bioio[NATIVE_METADATA_KEY])
@@ -158,7 +169,7 @@ def test_czi_subblock_metadata_embedded(tmp_path: pathlib.Path) -> None:
             "include_subblock_metadata": True,
         },
     )
-    store = tmp_path / "czi.ome.zarr"
+    store = _zarr_out(tmp_path, "czi", LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.czi", 0)
     native = _read_json(store, _provenance(store)[NATIVE_METADATA_KEY])
     subblocks = native["ImageDocument"]["Subblocks"]["Subblock"]
     assert subblocks, "no Subblocks (aicspylibczi?)"
@@ -180,7 +191,7 @@ def test_nd2_provenance_use_plate_96(tmp_path: pathlib.Path) -> None:
         provenance_reader_kwargs={"plate": "96"},
     )
 
-    store = tmp_path / "out.ome.zarr"
+    store = _zarr_out(tmp_path, "out", pathlib.Path(src), 0)
     sm = _read_json(store, _provenance(store)[STANDARD_METADATA_KEY])
 
     ref = ND2Reader(src, plate="96")

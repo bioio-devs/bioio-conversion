@@ -1,4 +1,5 @@
 import csv
+import re
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -10,6 +11,17 @@ from numpy.testing import assert_array_equal
 from bioio_conversion.converters.batch_converter import BatchConverter
 
 from ..conftest import LOCAL_RESOURCES_DIR
+
+
+def _expected_zarr(out_dir: Path, src: Path, scene_idx: int) -> Path:
+    """Compute expected .ome.zarr path for a single-scene conversion."""
+    bio = BioImage(str(src))
+    stem = src.stem
+    if len(bio.scenes) > 1:
+        scene_name = bio.scenes[scene_idx]
+        safe = re.sub(r'[<>:"/\\|?*]', "_", f"{stem}_{scene_name}")
+        return out_dir / f"{safe}.ome.zarr"
+    return out_dir / f"{stem}.ome.zarr"
 
 
 def test_run_jobs_from_list(tmp_path: Path) -> None:
@@ -33,7 +45,7 @@ def test_run_jobs_from_list(tmp_path: Path) -> None:
 
     # Assert
     for src in (tiff1, tiff2):
-        out_zarr = tmp_path / f"{src.stem}.ome.zarr"
+        out_zarr = _expected_zarr(tmp_path, src, 0)
         assert out_zarr.is_dir(), f"Missing output for {src.name}"
 
         bio_in = BioImage(str(src))
@@ -101,14 +113,14 @@ def test_run_jobs_from_directory_three_levels(
     # Run each job individually, cleaning up output before each run
     for job in jobs:
         src_file = Path(job.get("src") or job.get("source") or job["input"])
-        out_zarr = tmp_path / f"{src_file.stem}.ome.zarr"
+        out_zarr = _expected_zarr(tmp_path, src_file, 0)
         if out_zarr.exists():
             shutil.rmtree(out_zarr)
         bc.run_jobs([job])
 
     # Assert
     for src in samples:
-        out_zarr = tmp_path / f"{src.stem}.ome.zarr"
+        out_zarr = _expected_zarr(tmp_path, src, 0)
         assert out_zarr.is_dir(), f"Missing output for {src.name}"
 
         bio_in = BioImage(str(src))
@@ -155,7 +167,7 @@ def test_run_jobs_from_csv(tmp_path: Path) -> None:
 
     # Assert
     for src in (tiff1, tiff2):
-        out_z = tmp_path / "out_csv" / f"{src.stem}.ome.zarr"
+        out_z = _expected_zarr(tmp_path / "out_csv", src, 0)
         assert out_z.is_dir(), f"Missing output for {src.name}"
 
         bio_in = BioImage(str(src))
