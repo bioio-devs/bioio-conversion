@@ -244,7 +244,7 @@
 <span class="n">ATLAS_SIZE</span> <span class="o">=</span> <span class="mi">2048</span>
 
 <span class="c1"># Default uncompressed size budgets for the Zarr v3 layout. Single source of</span>
-<span class="c1"># truth so callers (e.g. the converter) don&#39;t re-hardcode the literals.</span>
+<span class="c1"># truth so callers (e.g. the converter) don't re-hardcode the literals.</span>
 <span class="n">DEFAULT_CHUNK_LIMIT_BYTES</span> <span class="o">=</span> <span class="mi">16</span> <span class="o">*</span> <span class="mi">1024</span><span class="o">**</span><span class="mi">2</span>
 <span class="n">DEFAULT_SHARD_LIMIT_BYTES</span> <span class="o">=</span> <span class="mi">4</span> <span class="o">*</span> <span class="mi">1024</span><span class="o">**</span><span class="mi">3</span>
 
@@ -255,12 +255,12 @@
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_choose_zarr_layout</span><span class="p">(</span>
     <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
-    <span class="n">dtype</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="s2">&quot;np.dtype[Any]&quot;</span><span class="p">],</span>
+    <span class="n">dtype</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="s2">"np.dtype[Any]"</span><span class="p">],</span>
     <span class="n">dims</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">chunk_limit_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_CHUNK_LIMIT_BYTES</span><span class="p">,</span>
     <span class="n">shard_limit_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_SHARD_LIMIT_BYTES</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Compute chunk and shard shapes for a Zarr v3 OME-Zarr array.</span>
 
 <span class="sd">    Intended for level-0 of a multi-resolution pyramid.  For lower levels use</span>
@@ -285,7 +285,7 @@
 <span class="sd">    -------</span>
 <span class="sd">    chunk_shape, shard_shape</span>
 <span class="sd">        Both in the same axis order and length as ``shape``.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">dim_sizes</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">dims</span><span class="p">,</span> <span class="n">shape</span><span class="p">))</span>
     <span class="n">T</span> <span class="o">=</span> <span class="n">dim_sizes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">DimensionNames</span><span class="o">.</span><span class="n">Time</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
     <span class="n">C</span> <span class="o">=</span> <span class="n">dim_sizes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">DimensionNames</span><span class="o">.</span><span class="n">Channel</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
@@ -336,7 +336,7 @@
     <span class="n">reference_shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
     <span class="n">reference_shard</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Derive a shard shape for a lower pyramid level proportional to level 0.</span>
 
 <span class="sd">    Each axis is scaled as ``reference_shard[ax] * shape[ax] / reference_shape[ax]``</span>
@@ -366,16 +366,16 @@
 <span class="sd">    -------</span>
 <span class="sd">    shard_shape</span>
 <span class="sd">        In the same axis order and length as ``shape``.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">shard_shape</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">shape</span><span class="p">)):</span>
-        <span class="c1"># Scale the level-0 shard proportionally to this level&#39;s extent, but</span>
+        <span class="c1"># Scale the level-0 shard proportionally to this level's extent, but</span>
         <span class="c1"># never below a single chunk, then round up to a whole chunk multiple.</span>
         <span class="n">proportional</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">reference_shard</span><span class="p">[</span><span class="n">ax</span><span class="p">]</span> <span class="o">*</span> <span class="n">shape</span><span class="p">[</span><span class="n">ax</span><span class="p">]</span> <span class="o">/</span> <span class="n">reference_shape</span><span class="p">[</span><span class="n">ax</span><span class="p">])</span>
         <span class="n">scaled</span> <span class="o">=</span> <span class="n">_round_to_multiple</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">chunk_shape</span><span class="p">[</span><span class="n">ax</span><span class="p">],</span> <span class="n">proportional</span><span class="p">),</span> <span class="n">chunk_shape</span><span class="p">[</span><span class="n">ax</span><span class="p">])</span>
 
         <span class="c1"># Cap at the smallest chunk multiple that covers the actual extent so we</span>
-        <span class="c1"># don&#39;t carry phantom overflow chunks that could never be filled.</span>
+        <span class="c1"># don't carry phantom overflow chunks that could never be filled.</span>
         <span class="n">coverage_cap</span> <span class="o">=</span> <span class="n">_round_to_multiple</span><span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="n">ax</span><span class="p">],</span> <span class="n">chunk_shape</span><span class="p">[</span><span class="n">ax</span><span class="p">])</span>
 
         <span class="n">shard_shape</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">scaled</span><span class="p">,</span> <span class="n">coverage_cap</span><span class="p">))</span>
@@ -386,12 +386,12 @@
 <a class="viewcode-back" href="../../bioio_conversion.html#bioio_conversion.sharding.choose_pyramid_layout">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">choose_pyramid_layout</span><span class="p">(</span>
     <span class="n">level_shapes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]],</span>
-    <span class="n">dtype</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="s2">&quot;np.dtype[Any]&quot;</span><span class="p">],</span>
+    <span class="n">dtype</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="s2">"np.dtype[Any]"</span><span class="p">],</span>
     <span class="n">dims</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">chunk_limit_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_CHUNK_LIMIT_BYTES</span><span class="p">,</span>
     <span class="n">shard_limit_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">DEFAULT_SHARD_LIMIT_BYTES</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Compute chunk and shard shapes for every level of a multi-resolution pyramid.</span>
 
 <span class="sd">    Level 0 uses the budget shard algorithm (``_choose_zarr_layout``).  All</span>
@@ -415,7 +415,7 @@
 <span class="sd">    -------</span>
 <span class="sd">    all_chunks, all_shards</span>
 <span class="sd">        Per-level chunk and shard shapes, level 0 first.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">chunk0</span><span class="p">,</span> <span class="n">shard0</span> <span class="o">=</span> <span class="n">_choose_zarr_layout</span><span class="p">(</span>
         <span class="n">level_shapes</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">dtype</span><span class="p">,</span> <span class="n">dims</span><span class="p">,</span> <span class="n">chunk_limit_bytes</span><span class="p">,</span> <span class="n">shard_limit_bytes</span>
     <span class="p">)</span>
@@ -453,7 +453,7 @@
     <span class="n">dims</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">atlas_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">ATLAS_SIZE</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Generate multi-resolution pyramid level shapes with atlas-fit termination.</span>
 
 <span class="sd">    Downsamples only Z, Y, and X — T and C are never changed.  Halves X and Y</span>
@@ -477,7 +477,7 @@
 <span class="sd">    List[Tuple[int, ...]]</span>
 <span class="sd">        Per-level shapes, level 0 first, each in the same axis order as</span>
 <span class="sd">        ``dims``.  The list always contains at least one entry.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">dim_map</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">dims</span><span class="p">,</span> <span class="n">base_shape</span><span class="p">))</span>
     <span class="n">T</span> <span class="o">=</span> <span class="n">dim_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">DimensionNames</span><span class="o">.</span><span class="n">Time</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
     <span class="n">C</span> <span class="o">=</span> <span class="n">dim_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">DimensionNames</span><span class="o">.</span><span class="n">Channel</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>

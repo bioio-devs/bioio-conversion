@@ -247,7 +247,7 @@
 <div class="viewcode-block" id="BatchConverter">
 <a class="viewcode-back" href="../../../generated/bioio_conversion.converters.BatchConverter.html#bioio_conversion.BatchConverter">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">BatchConverter</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    BatchConverter orchestrates bulk conversions of image files using</span>
 <span class="sd">    a specified converter backend.</span>
 
@@ -257,11 +257,11 @@
 <span class="sd">      - List-driven: explicit list of file paths</span>
 
 <span class="sd">    Default parameters for all jobs may be provided via `default_opts`.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="c1"># Map converter keys to classes</span>
     <span class="n">_CONVERTERS</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Type</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;ome-zarr&quot;</span><span class="p">:</span> <span class="n">OmeZarrConverter</span><span class="p">,</span>
+        <span class="s2">"ome-zarr"</span><span class="p">:</span> <span class="n">OmeZarrConverter</span><span class="p">,</span>
     <span class="p">}</span>
 
 <div class="viewcode-block" id="BatchConverter.__init__">
@@ -269,10 +269,10 @@
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
-        <span class="n">converter_key</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;ome-zarr&quot;</span><span class="p">,</span>
+        <span class="n">converter_key</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"ome-zarr"</span><span class="p">,</span>
         <span class="n">default_opts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Initialize the BatchConverter.</span>
 
 <span class="sd">        Parameters</span>
@@ -281,9 +281,9 @@
 <span class="sd">            Key to select the converter backend (must exist in `_CONVERTERS`).</span>
 <span class="sd">        default_opts : dict, optional</span>
 <span class="sd">            Shared default options for each job (e.g. destination, tbatch, overwrite).</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="n">converter_key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_CONVERTERS</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown converter: </span><span class="si">{</span><span class="n">converter_key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unknown converter: </span><span class="si">{</span><span class="n">converter_key</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">converter_cls</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_CONVERTERS</span><span class="p">[</span><span class="n">converter_key</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">default_opts</span> <span class="o">=</span> <span class="n">default_opts</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span> <span class="k">if</span> <span class="n">default_opts</span> <span class="k">else</span> <span class="p">{}</span></div>
 
@@ -291,13 +291,13 @@
 <div class="viewcode-block" id="BatchConverter.from_csv">
 <a class="viewcode-back" href="../../../bioio_conversion.converters.html#bioio_conversion.BatchConverter.from_csv">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">from_csv</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">csv_path</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Parse a CSV file into a list of job option dicts.</span>
 
 <span class="sd">        Each column maps to a converter parameter. Empty cells are skipped.</span>
 <span class="sd">        Values that decode as JSON become native Python objects.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">csv_path</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="sd">        """</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">csv_path</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="s2">""</span><span class="p">)</span>
         <span class="n">jobs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
             <span class="n">opts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_opts</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
@@ -320,17 +320,17 @@
         <span class="n">directory</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">],</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">max_depth</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
-        <span class="n">pattern</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;*&quot;</span><span class="p">,</span>
+        <span class="n">pattern</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"*"</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Recursively find files matching `pattern` up to `max_depth` levels.</span>
 
 <span class="sd">        max_depth=0 → only top-level files</span>
 <span class="sd">        max_depth=1 → include one subdirectory level, etc.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">base</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">directory</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">base</span><span class="o">.</span><span class="n">is_dir</span><span class="p">():</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Not a directory: </span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Not a directory: </span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
         <span class="n">jobs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">base</span><span class="o">.</span><span class="n">rglob</span><span class="p">(</span><span class="n">pattern</span><span class="p">):</span>
@@ -340,7 +340,7 @@
             <span class="c1"># depth = number of subfolders = len(parts) - 1</span>
             <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">rel</span><span class="o">.</span><span class="n">parts</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">&lt;=</span> <span class="n">max_depth</span><span class="p">:</span>
                 <span class="n">opts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_opts</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-                <span class="n">opts</span><span class="p">[</span><span class="s2">&quot;source&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+                <span class="n">opts</span><span class="p">[</span><span class="s2">"source"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
                 <span class="n">jobs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">opts</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">jobs</span></div>
 
@@ -351,15 +351,15 @@
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">paths</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">]],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Build jobs from an explicit list of file paths.</span>
 
 <span class="sd">        Each path yields one job dict; default_opts are merged in.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">jobs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
             <span class="n">opts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_opts</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-            <span class="n">opts</span><span class="p">[</span><span class="s2">&quot;source&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+            <span class="n">opts</span><span class="p">[</span><span class="s2">"source"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
             <span class="n">jobs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">opts</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">jobs</span></div>
 
@@ -370,15 +370,15 @@
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">jobs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Execute each job: must include &#39;source&#39;; merges defaults and job params.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Execute each job: must include 'source'; merges defaults and job params.</span>
+<span class="sd">        """</span>
         <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">jobs</span><span class="p">:</span>
-            <span class="n">source</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;source&quot;</span><span class="p">)</span>
+            <span class="n">source</span> <span class="o">=</span> <span class="n">job</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source"</span><span class="p">)</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">source</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Job missing &#39;source&#39;&quot;</span><span class="p">)</span>
-            <span class="c1"># Merge defaults and job params, excluding &#39;source&#39;</span>
-            <span class="n">params</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">job</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">k</span> <span class="o">!=</span> <span class="s2">&quot;source&quot;</span><span class="p">}</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Job missing 'source'"</span><span class="p">)</span>
+            <span class="c1"># Merge defaults and job params, excluding 'source'</span>
+            <span class="n">params</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">job</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">k</span> <span class="o">!=</span> <span class="s2">"source"</span><span class="p">}</span>
             <span class="n">conv_opts</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">default_opts</span><span class="p">,</span> <span class="o">**</span><span class="n">params</span><span class="p">}</span>
             <span class="n">conv</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">converter_cls</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="n">source</span><span class="p">,</span> <span class="o">**</span><span class="n">conv_opts</span><span class="p">)</span>
             <span class="n">conv</span><span class="o">.</span><span class="n">convert</span><span class="p">()</span></div>

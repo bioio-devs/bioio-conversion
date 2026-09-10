@@ -318,8 +318,8 @@
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">bioio_conversion.converters</span><span class="w"> </span><span class="kn">import</span> <span class="n">OmeZarrConverter</span>
 
 <span class="n">conv</span> <span class="o">=</span> <span class="n">OmeZarrConverter</span><span class="p">(</span>
-    <span class="n">source</span><span class="o">=</span><span class="s1">&#39;image.tiff&#39;</span><span class="p">,</span>
-    <span class="n">destination</span><span class="o">=</span><span class="s1">&#39;out_dir&#39;</span>
+    <span class="n">source</span><span class="o">=</span><span class="s1">'image.tiff'</span><span class="p">,</span>
+    <span class="n">destination</span><span class="o">=</span><span class="s1">'out_dir'</span>
 <span class="p">)</span>
 <span class="n">conv</span><span class="o">.</span><span class="n">convert</span><span class="p">()</span>
 </pre></div>
@@ -331,17 +331,17 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">zarr.codecs</span><span class="w"> </span><span class="kn">import</span> <span class="n">BloscCodec</span>
 
 <span class="n">conv</span> <span class="o">=</span> <span class="n">OmeZarrConverter</span><span class="p">(</span>
-    <span class="n">source</span><span class="o">=</span><span class="s1">&#39;multi_scene.czi&#39;</span><span class="p">,</span>
-    <span class="n">destination</span><span class="o">=</span><span class="s1">&#39;zarr_output&#39;</span><span class="p">,</span>
+    <span class="n">source</span><span class="o">=</span><span class="s1">'multi_scene.czi'</span><span class="p">,</span>
+    <span class="n">destination</span><span class="o">=</span><span class="s1">'zarr_output'</span><span class="p">,</span>
     <span class="n">scenes</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-    <span class="n">name</span><span class="o">=</span><span class="s1">&#39;experiment1&#39;</span><span class="p">,</span>
+    <span class="n">name</span><span class="o">=</span><span class="s1">'experiment1'</span><span class="p">,</span>
     <span class="n">tbatch</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
     <span class="n">num_levels</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
     <span class="n">downsample_z</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="n">chunk_shape</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">16</span><span class="p">,</span><span class="mi">256</span><span class="p">,</span><span class="mi">256</span><span class="p">),</span>
     <span class="n">shard_shape</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">128</span><span class="p">,</span><span class="mi">1024</span><span class="p">,</span><span class="mi">1024</span><span class="p">),</span>
     <span class="n">memory_target</span><span class="o">=</span><span class="mi">32</span><span class="o">*</span><span class="mi">1024</span><span class="o">*</span><span class="mi">1024</span><span class="p">,</span>
-    <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;uint16&#39;</span><span class="p">,</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="s1">'uint16'</span><span class="p">,</span>
     <span class="n">compressor</span><span class="o">=</span><span class="n">BloscCodec</span><span class="p">(),</span>
     <span class="n">zarr_format</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
 <span class="p">)</span>
@@ -352,8 +352,8 @@
 <section id="explicit-level-shapes">
 <h5>Explicit <code class="docutils literal notranslate"><span class="pre">level_shapes</span></code><a class="headerlink" href="#explicit-level-shapes" title="Link to this heading">¶</a></h5>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">conv</span> <span class="o">=</span> <span class="n">OmeZarrConverter</span><span class="p">(</span>
-    <span class="n">source</span><span class="o">=</span><span class="s2">&quot;image_tczyx.tif&quot;</span><span class="p">,</span>
-    <span class="n">destination</span><span class="o">=</span><span class="s2">&quot;out_tczyx&quot;</span><span class="p">,</span>
+    <span class="n">source</span><span class="o">=</span><span class="s2">"image_tczyx.tif"</span><span class="p">,</span>
+    <span class="n">destination</span><span class="o">=</span><span class="s2">"out_tczyx"</span><span class="p">,</span>
     <span class="n">level_shapes</span><span class="o">=</span><span class="p">[</span>
         <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">325</span><span class="p">,</span> <span class="mi">475</span><span class="p">),</span>
         <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">162</span><span class="p">,</span> <span class="mi">238</span><span class="p">),</span>
@@ -369,15 +369,15 @@
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">bioio_ome_zarr.writers</span><span class="w"> </span><span class="kn">import</span> <span class="n">Channel</span>
 
 <span class="n">channels</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="n">Channel</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="s2">&quot;DAPI&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;#0000FF&quot;</span><span class="p">,</span> <span class="n">active</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-            <span class="n">window</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;min&quot;</span><span class="p">:</span><span class="mi">100</span><span class="p">,</span> <span class="s2">&quot;max&quot;</span><span class="p">:</span><span class="mi">2000</span><span class="p">,</span> <span class="s2">&quot;start&quot;</span><span class="p">:</span><span class="mi">200</span><span class="p">,</span> <span class="s2">&quot;end&quot;</span><span class="p">:</span><span class="mi">1200</span><span class="p">}),</span>
-    <span class="n">Channel</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="s2">&quot;GFP&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;#00FF00&quot;</span><span class="p">,</span> <span class="n">active</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
-    <span class="n">Channel</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="s2">&quot;TRITC&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;#FF0000&quot;</span><span class="p">,</span> <span class="n">active</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
+    <span class="n">Channel</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="s2">"DAPI"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"#0000FF"</span><span class="p">,</span> <span class="n">active</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">window</span><span class="o">=</span><span class="p">{</span><span class="s2">"min"</span><span class="p">:</span><span class="mi">100</span><span class="p">,</span> <span class="s2">"max"</span><span class="p">:</span><span class="mi">2000</span><span class="p">,</span> <span class="s2">"start"</span><span class="p">:</span><span class="mi">200</span><span class="p">,</span> <span class="s2">"end"</span><span class="p">:</span><span class="mi">1200</span><span class="p">}),</span>
+    <span class="n">Channel</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="s2">"GFP"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"#00FF00"</span><span class="p">,</span> <span class="n">active</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+    <span class="n">Channel</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="s2">"TRITC"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"#FF0000"</span><span class="p">,</span> <span class="n">active</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span>
 <span class="p">]</span>
 
 <span class="n">conv</span> <span class="o">=</span> <span class="n">OmeZarrConverter</span><span class="p">(</span>
-    <span class="n">source</span><span class="o">=</span><span class="s2">&quot;multi_channel.czi&quot;</span><span class="p">,</span>
-    <span class="n">destination</span><span class="o">=</span><span class="s2">&quot;out_channels&quot;</span><span class="p">,</span>
+    <span class="n">source</span><span class="o">=</span><span class="s2">"multi_channel.czi"</span><span class="p">,</span>
+    <span class="n">destination</span><span class="o">=</span><span class="s2">"out_channels"</span><span class="p">,</span>
     <span class="n">channels</span><span class="o">=</span><span class="n">channels</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="n">conv</span><span class="o">.</span><span class="n">convert</span><span class="p">()</span>
@@ -387,11 +387,11 @@
 <section id="axes-physical-pixel-sizes">
 <h5>Axes &amp; physical pixel sizes<a class="headerlink" href="#axes-physical-pixel-sizes" title="Link to this heading">¶</a></h5>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">conv</span> <span class="o">=</span> <span class="n">OmeZarrConverter</span><span class="p">(</span>
-    <span class="n">source</span><span class="o">=</span><span class="s2">&quot;custom_axes.tif&quot;</span><span class="p">,</span>
-    <span class="n">destination</span><span class="o">=</span><span class="s2">&quot;out_axes&quot;</span><span class="p">,</span>
-    <span class="n">axes_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;t&quot;</span><span class="p">,</span><span class="s2">&quot;c&quot;</span><span class="p">,</span><span class="s2">&quot;z&quot;</span><span class="p">,</span><span class="s2">&quot;y&quot;</span><span class="p">,</span><span class="s2">&quot;x&quot;</span><span class="p">],</span>
-    <span class="n">axes_types</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;time&quot;</span><span class="p">,</span><span class="s2">&quot;channel&quot;</span><span class="p">,</span><span class="s2">&quot;space&quot;</span><span class="p">,</span><span class="s2">&quot;space&quot;</span><span class="p">,</span><span class="s2">&quot;space&quot;</span><span class="p">],</span>
-    <span class="n">axes_units</span><span class="o">=</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;micrometer&quot;</span><span class="p">,</span><span class="s2">&quot;micrometer&quot;</span><span class="p">,</span><span class="s2">&quot;micrometer&quot;</span><span class="p">],</span>
+    <span class="n">source</span><span class="o">=</span><span class="s2">"custom_axes.tif"</span><span class="p">,</span>
+    <span class="n">destination</span><span class="o">=</span><span class="s2">"out_axes"</span><span class="p">,</span>
+    <span class="n">axes_names</span><span class="o">=</span><span class="p">[</span><span class="s2">"t"</span><span class="p">,</span><span class="s2">"c"</span><span class="p">,</span><span class="s2">"z"</span><span class="p">,</span><span class="s2">"y"</span><span class="p">,</span><span class="s2">"x"</span><span class="p">],</span>
+    <span class="n">axes_types</span><span class="o">=</span><span class="p">[</span><span class="s2">"time"</span><span class="p">,</span><span class="s2">"channel"</span><span class="p">,</span><span class="s2">"space"</span><span class="p">,</span><span class="s2">"space"</span><span class="p">,</span><span class="s2">"space"</span><span class="p">],</span>
+    <span class="n">axes_units</span><span class="o">=</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"micrometer"</span><span class="p">,</span><span class="s2">"micrometer"</span><span class="p">,</span><span class="s2">"micrometer"</span><span class="p">],</span>
     <span class="n">physical_pixel_size</span><span class="o">=</span><span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.108</span><span class="p">,</span> <span class="mf">0.108</span><span class="p">],</span>
 <span class="p">)</span>
 <span class="n">conv</span><span class="o">.</span><span class="n">convert</span><span class="p">()</span>
@@ -401,8 +401,8 @@
 <section id="example-with-fewer-dimensions-3d-zyx">
 <h5>Example with fewer dimensions (3D ZYX)<a class="headerlink" href="#example-with-fewer-dimensions-3d-zyx" title="Link to this heading">¶</a></h5>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">conv</span> <span class="o">=</span> <span class="n">OmeZarrConverter</span><span class="p">(</span>
-    <span class="n">source</span><span class="o">=</span><span class="s2">&quot;volume_zyx.tif&quot;</span><span class="p">,</span>
-    <span class="n">destination</span><span class="o">=</span><span class="s2">&quot;out_zyx&quot;</span><span class="p">,</span>
+    <span class="n">source</span><span class="o">=</span><span class="s2">"volume_zyx.tif"</span><span class="p">,</span>
+    <span class="n">destination</span><span class="o">=</span><span class="s2">"out_zyx"</span><span class="p">,</span>
     <span class="n">num_levels</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
     <span class="n">downsample_z</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span>
@@ -418,13 +418,13 @@
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">bioio_conversion</span><span class="w"> </span><span class="kn">import</span> <span class="n">BatchConverter</span>
 
 <span class="n">bc</span> <span class="o">=</span> <span class="n">BatchConverter</span><span class="p">(</span>
-    <span class="n">converter_key</span><span class="o">=</span><span class="s1">&#39;ome-zarr&#39;</span><span class="p">,</span>
+    <span class="n">converter_key</span><span class="o">=</span><span class="s1">'ome-zarr'</span><span class="p">,</span>
     <span class="n">default_opts</span><span class="o">=</span><span class="p">{</span>
-        <span class="s1">&#39;destination&#39;</span><span class="p">:</span> <span class="s1">&#39;batch_out&#39;</span><span class="p">,</span>
-        <span class="s1">&#39;tbatch&#39;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+        <span class="s1">'destination'</span><span class="p">:</span> <span class="s1">'batch_out'</span><span class="p">,</span>
+        <span class="s1">'tbatch'</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
     <span class="p">}</span>
 <span class="p">)</span>
-<span class="n">jobs</span> <span class="o">=</span> <span class="n">bc</span><span class="o">.</span><span class="n">from_csv</span><span class="p">(</span><span class="s1">&#39;jobs.csv&#39;</span><span class="p">)</span>  <span class="c1"># parse CSV into job dicts</span>
+<span class="n">jobs</span> <span class="o">=</span> <span class="n">bc</span><span class="o">.</span><span class="n">from_csv</span><span class="p">(</span><span class="s1">'jobs.csv'</span><span class="p">)</span>  <span class="c1"># parse CSV into job dicts</span>
 <span class="n">bc</span><span class="o">.</span><span class="n">run_jobs</span><span class="p">(</span><span class="n">jobs</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -434,12 +434,12 @@
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">bioio_conversion</span><span class="w"> </span><span class="kn">import</span> <span class="n">BatchConverter</span>
 
 <span class="n">bc</span> <span class="o">=</span> <span class="n">BatchConverter</span><span class="p">(</span><span class="n">default_opts</span><span class="o">=</span><span class="p">{</span>
-    <span class="s1">&#39;destination&#39;</span><span class="p">:</span> <span class="s1">&#39;dir_out&#39;</span><span class="p">,</span>
+    <span class="s1">'destination'</span><span class="p">:</span> <span class="s1">'dir_out'</span><span class="p">,</span>
 <span class="p">})</span>
 <span class="n">jobs</span> <span class="o">=</span> <span class="n">bc</span><span class="o">.</span><span class="n">from_directory</span><span class="p">(</span>
-    <span class="s1">&#39;/data/images&#39;</span><span class="p">,</span>
+    <span class="s1">'/data/images'</span><span class="p">,</span>
     <span class="n">max_depth</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-    <span class="n">pattern</span><span class="o">=</span><span class="s1">&#39;*.tif&#39;</span>
+    <span class="n">pattern</span><span class="o">=</span><span class="s1">'*.tif'</span>
 <span class="p">)</span>
 <span class="n">bc</span><span class="o">.</span><span class="n">run_jobs</span><span class="p">(</span><span class="n">jobs</span><span class="p">)</span>
 </pre></div>
@@ -449,10 +449,10 @@
 <h4>List-driven batch conversion<a class="headerlink" href="#list-driven-batch-conversion" title="Link to this heading">¶</a></h4>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">bioio_conversion</span><span class="w"> </span><span class="kn">import</span> <span class="n">BatchConverter</span>
 
-<span class="n">paths</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;/data/a.czi&#39;</span><span class="p">,</span> <span class="s1">&#39;/data/b.czi&#39;</span><span class="p">,</span> <span class="s1">&#39;/data/c.zarr&#39;</span><span class="p">]</span>
+<span class="n">paths</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'/data/a.czi'</span><span class="p">,</span> <span class="s1">'/data/b.czi'</span><span class="p">,</span> <span class="s1">'/data/c.zarr'</span><span class="p">]</span>
 <span class="n">bc</span> <span class="o">=</span> <span class="n">BatchConverter</span><span class="p">(</span><span class="n">default_opts</span><span class="o">=</span><span class="p">{</span>
-    <span class="s1">&#39;destination&#39;</span><span class="p">:</span> <span class="s1">&#39;list_out&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;scenes&#39;</span><span class="p">:</span> <span class="mi">0</span>
+    <span class="s1">'destination'</span><span class="p">:</span> <span class="s1">'list_out'</span><span class="p">,</span>
+    <span class="s1">'scenes'</span><span class="p">:</span> <span class="mi">0</span>
 <span class="p">})</span>
 <span class="n">jobs</span> <span class="o">=</span> <span class="n">bc</span><span class="o">.</span><span class="n">from_list</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span>
 <span class="n">bc</span><span class="o">.</span><span class="n">run_jobs</span><span class="p">(</span><span class="n">jobs</span><span class="p">)</span>
@@ -609,7 +609,7 @@ Example for <code class="docutils literal notranslate"><span class="pre">(t,c,z,
 </div>
 <p><strong>Explicit level shapes</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>image.tif<span class="w"> </span>-d<span class="w"> </span>out_explicit<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--level-shapes<span class="w"> </span><span class="s2">&quot;1,3,5,325,475;1,3,2,162,238;1,3,1,81,119&quot;</span>
+<span class="w">  </span>--level-shapes<span class="w"> </span><span class="s2">"1,3,5,325,475;1,3,2,162,238;1,3,1,81,119"</span>
 </pre></div>
 </div>
 <p><strong>Dtype and chunking</strong></p>
@@ -621,7 +621,7 @@ Example for <code class="docutils literal notranslate"><span class="pre">(t,c,z,
 <p><strong>Custom channels</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>image_with_channels.czi<span class="w"> </span>-d<span class="w"> </span>out_dir<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--channel-labels<span class="w"> </span>DAPI,GFP,TRITC<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--channel-colors<span class="w"> </span><span class="s2">&quot;#0000FF,#00FF00,#FF0000&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--channel-colors<span class="w"> </span><span class="s2">"#0000FF,#00FF00,#FF0000"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--channel-actives<span class="w"> </span>true,true,false
 </pre></div>
 </div>
@@ -644,7 +644,7 @@ Example for <code class="docutils literal notranslate"><span class="pre">(t,c,z,
 <p><strong>Provenance with extra reader kwargs</strong></p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>bioio-convert<span class="w"> </span>plate.nd2<span class="w"> </span>-d<span class="w"> </span>out_dir<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--include-provenance<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--provenance-reader-kwargs<span class="w"> </span><span class="s1">&#39;{&quot;plate&quot;: &quot;96&quot;}&#39;</span>
+<span class="w">  </span>--provenance-reader-kwargs<span class="w"> </span><span class="s1">'{"plate": "96"}'</span>
 </pre></div>
 </div>
 </section>
@@ -715,9 +715,9 @@ argument override the shared defaults on a per-job basis.</p>
 <span class="w">  </span>--mode<span class="w"> </span>dir<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--directory<span class="w"> </span>data/<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--depth<span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--pattern<span class="w"> </span><span class="s1">&#39;*.czi&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--pattern<span class="w"> </span><span class="s1">'*.czi'</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--destination<span class="w"> </span>output_zarr<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--level-shapes<span class="w"> </span><span class="s2">&quot;1,3,5,325,475;1,3,2,162,238;1,3,1,81,119&quot;</span>
+<span class="w">  </span>--level-shapes<span class="w"> </span><span class="s2">"1,3,5,325,475;1,3,2,162,238;1,3,1,81,119"</span>
 </pre></div>
 </div>
 <p><strong>List mode</strong></p>

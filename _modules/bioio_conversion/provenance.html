@@ -249,30 +249,30 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">bioio</span><span class="w"> </span><span class="kn">import</span> <span class="n">BioImage</span>
 
 <span class="c1"># Root attributes key holding the provenance block.</span>
-<span class="n">PROVENANCE_ATTR_KEY</span> <span class="o">=</span> <span class="s2">&quot;bioio_conversion&quot;</span>
+<span class="n">PROVENANCE_ATTR_KEY</span> <span class="o">=</span> <span class="s2">"bioio_conversion"</span>
 
 <span class="c1"># Store-relative paths for the source metadata sidecars.</span>
-<span class="n">NATIVE_METADATA_PATH</span> <span class="o">=</span> <span class="s2">&quot;metadata.native.json&quot;</span>
-<span class="n">OME_METADATA_PATH</span> <span class="o">=</span> <span class="s2">&quot;metadata.ome.json&quot;</span>
-<span class="n">STANDARD_METADATA_PATH</span> <span class="o">=</span> <span class="s2">&quot;standard_metadata.json&quot;</span>
+<span class="n">NATIVE_METADATA_PATH</span> <span class="o">=</span> <span class="s2">"metadata.native.json"</span>
+<span class="n">OME_METADATA_PATH</span> <span class="o">=</span> <span class="s2">"metadata.ome.json"</span>
+<span class="n">STANDARD_METADATA_PATH</span> <span class="o">=</span> <span class="s2">"standard_metadata.json"</span>
 
 <span class="c1"># Provenance-block keys pointing at each sidecar above.</span>
-<span class="n">NATIVE_METADATA_KEY</span> <span class="o">=</span> <span class="s2">&quot;source_metadata&quot;</span>
-<span class="n">OME_METADATA_KEY</span> <span class="o">=</span> <span class="s2">&quot;ome_metadata&quot;</span>
-<span class="n">STANDARD_METADATA_KEY</span> <span class="o">=</span> <span class="s2">&quot;standard_metadata&quot;</span>
+<span class="n">NATIVE_METADATA_KEY</span> <span class="o">=</span> <span class="s2">"source_metadata"</span>
+<span class="n">OME_METADATA_KEY</span> <span class="o">=</span> <span class="s2">"ome_metadata"</span>
+<span class="n">STANDARD_METADATA_KEY</span> <span class="o">=</span> <span class="s2">"standard_metadata"</span>
 
 <span class="c1"># Remaining provenance-block field keys.</span>
-<span class="n">SOURCE_FILE_KEY</span> <span class="o">=</span> <span class="s2">&quot;source_file&quot;</span>
-<span class="n">CONVERTED_KEY</span> <span class="o">=</span> <span class="s2">&quot;converted&quot;</span>
-<span class="n">PACKAGE_VERSIONS_KEY</span> <span class="o">=</span> <span class="s2">&quot;bioio_package_versions&quot;</span>
-<span class="n">PLUGIN_KEY</span> <span class="o">=</span> <span class="s2">&quot;plugin&quot;</span>
+<span class="n">SOURCE_FILE_KEY</span> <span class="o">=</span> <span class="s2">"source_file"</span>
+<span class="n">CONVERTED_KEY</span> <span class="o">=</span> <span class="s2">"converted"</span>
+<span class="n">PACKAGE_VERSIONS_KEY</span> <span class="o">=</span> <span class="s2">"bioio_package_versions"</span>
+<span class="n">PLUGIN_KEY</span> <span class="o">=</span> <span class="s2">"plugin"</span>
 
 <span class="c1"># Packages whose versions are always recorded, alongside the reader plugin.</span>
-<span class="n">TRACKED_PACKAGES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;bioio&quot;</span><span class="p">,</span> <span class="s2">&quot;bioio-base&quot;</span><span class="p">,</span> <span class="s2">&quot;bioio-ome-zarr&quot;</span><span class="p">,</span> <span class="s2">&quot;bioio-conversion&quot;</span><span class="p">)</span>
+<span class="n">TRACKED_PACKAGES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"bioio"</span><span class="p">,</span> <span class="s2">"bioio-base"</span><span class="p">,</span> <span class="s2">"bioio-ome-zarr"</span><span class="p">,</span> <span class="s2">"bioio-conversion"</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_json_safe</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Coerce a ``StandardMetadata`` value into a JSON-serializable primitive.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Coerce a ``StandardMetadata`` value into a JSON-serializable primitive."""</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timedelta</span><span class="p">):</span>
@@ -281,29 +281,29 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_package_version</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Installed version of ``name``, or ``None`` if it cannot be determined.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Installed version of ``name``, or ``None`` if it cannot be determined."""</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">importlib</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">version</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
     <span class="k">except</span> <span class="n">importlib</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">PackageNotFoundError</span><span class="p">:</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not determine version for </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Could not determine version for </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">"</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_metadata_as_dict</span><span class="p">(</span><span class="n">bio</span><span class="p">:</span> <span class="n">BioImage</span><span class="p">,</span> <span class="n">attr</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">label</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert a metadata object to a JSON-serializable dict, or None.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Convert a metadata object to a JSON-serializable dict, or None."""</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">md</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">bio</span><span class="p">,</span> <span class="n">attr</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">md</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="s2">&quot;model_dump&quot;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">md</span><span class="o">.</span><span class="n">model_dump</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">&quot;json&quot;</span><span class="p">)</span>  <span class="c1"># ome-types / Pydantic v2</span>
-        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="s2">&quot;json&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="s2">"model_dump"</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">md</span><span class="o">.</span><span class="n">model_dump</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">"json"</span><span class="p">)</span>  <span class="c1"># ome-types / Pydantic v2</span>
+        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="s2">"json"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)):</span>
             <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">md</span><span class="o">.</span><span class="n">json</span><span class="p">())</span>  <span class="c1"># Pydantic v1</span>
-        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="s2">&quot;tag&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="s2">&quot;iter&quot;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">xmltodict</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">ET</span><span class="o">.</span><span class="n">tostring</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;unicode&quot;</span><span class="p">))</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="s2">"tag"</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="s2">"iter"</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">xmltodict</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">ET</span><span class="o">.</span><span class="n">tostring</span><span class="p">(</span><span class="n">md</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"unicode"</span><span class="p">))</span>
         <span class="k">return</span> <span class="kc">None</span>
     <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># metadata transfer is best-effort</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Could not read </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> metadata: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Could not read </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> metadata: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span>
 
 
@@ -317,26 +317,26 @@
         <span class="n">scene_names</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
         <span class="n">metadata_reader_kwargs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Builds the ``&quot;bioio_conversion&quot;`` provenance attributes and XML sidecars.</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Builds the ``"bioio_conversion"`` provenance attributes and XML sidecars.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        source : str</span>
 <span class="sd">            Path to the source image.</span>
 <span class="sd">        bioimage : BioImage</span>
-<span class="sd">            The conversion&#39;s pixel reader.</span>
+<span class="sd">            The conversion's pixel reader.</span>
 <span class="sd">        scene_names : Sequence[str]</span>
-<span class="sd">            The pixel reader&#39;s scene names, indexed by ``scene_index``.</span>
+<span class="sd">            The pixel reader's scene names, indexed by ``scene_index``.</span>
 <span class="sd">        metadata_reader_kwargs : dict, optional</span>
 <span class="sd">            Extra kwargs forwarded to ``BioImage`` when opening a dedicated</span>
 <span class="sd">            metadata reader. When ``None`` (default) the pixel reader is used</span>
 <span class="sd">            as-is for provenance.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_source</span> <span class="o">=</span> <span class="n">source</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_bioimage</span> <span class="o">=</span> <span class="n">bioimage</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_scene_names</span> <span class="o">=</span> <span class="n">scene_names</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_plugin</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">bioimage</span><span class="o">.</span><span class="n">reader</span><span class="p">)</span><span class="o">.</span><span class="vm">__module__</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_plugin</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">bioimage</span><span class="o">.</span><span class="n">reader</span><span class="p">)</span><span class="o">.</span><span class="vm">__module__</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"."</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="s2">"-"</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_reader_kwargs</span> <span class="o">=</span> <span class="n">metadata_reader_kwargs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_bioimage</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">BioImage</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_cache</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
@@ -345,7 +345,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_cache</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_metadata_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BioImage</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;The reader used to source provenance metadata, cached across scenes.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""The reader used to source provenance metadata, cached across scenes."""</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_bioimage</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_bioimage</span>
 
@@ -357,8 +357,8 @@
             <span class="n">img</span> <span class="o">=</span> <span class="n">BioImage</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="p">,</span> <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_metadata_reader_kwargs</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Could not open a dedicated </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_plugin</span><span class="si">}</span><span class="s2"> metadata reader, &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;using the default reader for provenance: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"Could not open a dedicated </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_plugin</span><span class="si">}</span><span class="s2"> metadata reader, "</span>
+                <span class="sa">f</span><span class="s2">"using the default reader for provenance: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
                 <span class="ne">UserWarning</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_bioimage</span>
@@ -369,24 +369,24 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">_metadata_dicts</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whole-file ``(ome_dict, native_dict)`` for the source, computed once.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Whole-file ``(ome_dict, native_dict)`` for the source, computed once."""</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">meta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_reader</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_cache</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="n">_metadata_as_dict</span><span class="p">(</span><span class="n">meta</span><span class="p">,</span> <span class="s2">&quot;ome_metadata&quot;</span><span class="p">,</span> <span class="s2">&quot;OME&quot;</span><span class="p">),</span>
-                <span class="n">_metadata_as_dict</span><span class="p">(</span><span class="n">meta</span><span class="p">,</span> <span class="s2">&quot;metadata&quot;</span><span class="p">,</span> <span class="s2">&quot;native&quot;</span><span class="p">),</span>
+                <span class="n">_metadata_as_dict</span><span class="p">(</span><span class="n">meta</span><span class="p">,</span> <span class="s2">"ome_metadata"</span><span class="p">,</span> <span class="s2">"OME"</span><span class="p">),</span>
+                <span class="n">_metadata_as_dict</span><span class="p">(</span><span class="n">meta</span><span class="p">,</span> <span class="s2">"metadata"</span><span class="p">,</span> <span class="s2">"native"</span><span class="p">),</span>
             <span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_cache</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_whole_file_provenance</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;The whole-file part of the block and its sidecars.</span>
+<span class="w">        </span><span class="sd">"""The whole-file part of the block and its sidecars.</span>
 
 <span class="sd">        File name, conversion timestamp, package versions, reader plugin, and the</span>
 <span class="sd">        metadata sidecars are all scene-independent, so they are built on first</span>
 <span class="sd">        use and reused for every scene.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_cache</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_cache</span>
 
@@ -429,7 +429,7 @@
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">scene_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Derive provenance for a scene.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Derive provenance for a scene."""</span>
         <span class="n">meta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_reader</span><span class="p">()</span>
         <span class="n">meta</span><span class="o">.</span><span class="n">set_scene</span><span class="p">(</span><span class="n">scene_index</span><span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
@@ -439,8 +439,8 @@
             <span class="p">}</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Could not read standard_metadata, omitting &quot;</span>
-                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">PROVENANCE_ATTR_KEY</span><span class="si">!r}</span><span class="s2"> attributes: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"Could not read standard_metadata, omitting "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">PROVENANCE_ATTR_KEY</span><span class="si">!r}</span><span class="s2"> attributes: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
                 <span class="ne">UserWarning</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="p">{}</span>
@@ -456,18 +456,18 @@
 <div class="viewcode-block" id="write_sidecars">
 <a class="viewcode-back" href="../../bioio_conversion.html#bioio_conversion.provenance.write_sidecars">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">write_sidecars</span><span class="p">(</span><span class="n">store_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">sidecars</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Write metadata sidecar dicts into the store.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Write metadata sidecar dicts into the store."""</span>
     <span class="n">fs</span><span class="p">,</span> <span class="n">root</span> <span class="o">=</span> <span class="n">fsspec</span><span class="o">.</span><span class="n">core</span><span class="o">.</span><span class="n">url_to_fs</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">store_path</span><span class="p">))</span>
     <span class="k">for</span> <span class="n">rel_path</span><span class="p">,</span> <span class="n">content</span> <span class="ow">in</span> <span class="n">sidecars</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">sidecar_path</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">root</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s1">&#39;/&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">rel_path</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="n">parent</span> <span class="o">=</span> <span class="n">sidecar_path</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">sidecar_path</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">root</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s1">'/'</span><span class="p">)</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">rel_path</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">parent</span> <span class="o">=</span> <span class="n">sidecar_path</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">"/"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
             <span class="n">fs</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-            <span class="k">with</span> <span class="n">fs</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">sidecar_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">fs</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">sidecar_path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
                 <span class="n">handle</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">content</span><span class="p">))</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Could not write metadata sidecar </span><span class="si">{</span><span class="n">rel_path</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">"Could not write metadata sidecar </span><span class="si">{</span><span class="n">rel_path</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
                 <span class="ne">UserWarning</span><span class="p">,</span>
             <span class="p">)</span></div>
 
