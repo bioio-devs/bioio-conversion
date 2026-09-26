@@ -388,7 +388,7 @@ class OmeZarrConverter:
             ]
         except ValueError:
             raise ValueError(
-                f"channel_order names must be among {names} for {scene}; "
+                f"channel_order names must be among {names} for {scene}, "
                 f"got {self._channel_order}"
             ) from None
         ccount = dims.C if DimensionNames.Channel in dims.order else 0
@@ -396,7 +396,7 @@ class OmeZarrConverter:
             raise ValueError(
                 f"channel_order must be a permutation of all {ccount} source "
                 f"channels of {scene} (each of {list(range(ccount))} exactly "
-                f"once); got {self._channel_order}"
+                f"once), got {self._channel_order}"
             )
         return tuple(order)
 
