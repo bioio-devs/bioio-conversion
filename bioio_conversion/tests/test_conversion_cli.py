@@ -213,3 +213,113 @@ def test_cli_provenance_reader_kwargs_requires_flag(tmp_path: pathlib.Path) -> N
     # Assert
     assert result.exit_code != 0
     assert "requires --include-provenance" in result.output
+
+
+def test_cli_channel_order(tmp_path: pathlib.Path) -> None:
+    """--channel-order permutes both the written pixels and the channel labels."""
+    # Arrange
+    runner = CliRunner()
+    tiff = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.ome.tiff"
+    order = [2, 0, 1]
+
+    # Act
+    result = runner.invoke(
+        main,
+        [
+            str(tiff),
+            "-d",
+            str(tmp_path),
+            "-n",
+            "reordered",
+            "-s",
+            "0",
+            "--channel-order",
+            ",".join(str(c) for c in order),
+        ],
+    )
+
+    # Assert
+    assert result.exit_code == 0, result.output
+    bio_in = BioImage(str(tiff))
+    bio_in.set_scene(0)
+    bio_out = BioImage(str(tmp_path / "reordered_Image_0.ome.zarr"))
+
+    assert bio_out.channel_names == [bio_in.channel_names[i] for i in order]
+    assert_array_equal(
+        bio_out.get_image_data("TCZYX"),
+        bio_in.get_image_data("TCZYX", C=order),
+    )
+
+
+def test_cli_channel_order_rejects_incomplete_permutation(
+    tmp_path: pathlib.Path,
+) -> None:
+    """An order that does not name every source channel fails cleanly."""
+    # Arrange
+    runner = CliRunner()
+    tiff = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.ome.tiff"
+
+    # Act
+    result = runner.invoke(
+        main,
+        [str(tiff), "-d", str(tmp_path), "-s", "0", "--channel-order", "0,1"],
+    )
+
+    # Assert
+    assert result.exit_code != 0
+    assert "permutation of all 3" in result.output
+    assert not list(tmp_path.glob("*.ome.zarr"))
+
+
+def test_cli_channel_order_by_name(tmp_path: pathlib.Path) -> None:
+    """--channel-order accepts channel names, mixed with indices."""
+    # Arrange
+    runner = CliRunner()
+    tiff = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.ome.tiff"
+    expected_indices = [2, 0, 1]  # Bright, EGFP, TaRFP
+
+    # Act
+    result = runner.invoke(
+        main,
+        [
+            str(tiff),
+            "-d",
+            str(tmp_path),
+            "-n",
+            "by_name",
+            "-s",
+            "0",
+            "--channel-order",
+            "Bright, EGFP, 1",
+        ],
+    )
+
+    # Assert
+    assert result.exit_code == 0, result.output
+    bio_in = BioImage(str(tiff))
+    bio_in.set_scene(0)
+    bio_out = BioImage(str(tmp_path / "by_name_Image_0.ome.zarr"))
+
+    assert bio_out.channel_names == [bio_in.channel_names[i] for i in expected_indices]
+    assert_array_equal(
+        bio_out.get_image_data("TCZYX"),
+        bio_in.get_image_data("TCZYX", C=expected_indices),
+    )
+
+
+def test_cli_channel_order_unknown_name(tmp_path: pathlib.Path) -> None:
+    """An unknown channel name fails cleanly and lists the real names."""
+    # Arrange
+    runner = CliRunner()
+    tiff = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.ome.tiff"
+
+    # Act
+    result = runner.invoke(
+        main,
+        [str(tiff), "-d", str(tmp_path), "-s", "0", "--channel-order", "GFP,0,1"],
+    )
+
+    # Assert
+    assert result.exit_code != 0
+    assert "names must be among ['EGFP', 'TaRFP', 'Bright']" in result.output
+    assert not list(tmp_path.glob("*.ome.zarr"))

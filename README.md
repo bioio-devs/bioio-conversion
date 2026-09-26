@@ -285,10 +285,22 @@ converter derives them automatically with an uncompressed budget of
   * `3` ≈ NGFF 0.5
     If omitted, the writer’s default is used (`3` ≈ NGFF 0.5).
 
+**Channel order**
+
+* `--channel-order`: comma-separated source channels in the order to write
+  them, as indices or as channel names from the source.
+  `--channel-order 2,0,1` writes source channel 2 as output channel 0, then
+  source channels 0 and 1; `--channel-order Bright,EGFP,TaRFP` does the same
+  by name, and the two forms may be mixed. Names are matched exactly against
+  the source's channel names for each scene. Every source channel must appear
+  exactly once (the conversion refuses to drop or duplicate channels). Labels
+  read from the source follow the new order; the channel display options
+  below describe channels in *output* order.
+
 **Channel display options**
 
 These only take effect when `--channel-labels` is provided. All lists must
-align by channel index.
+align by channel index (in output order when `--channel-order` is used).
 
 * `--channel-labels`: comma-separated channel names
   (e.g. `DAPI,GFP,TRITC`).
