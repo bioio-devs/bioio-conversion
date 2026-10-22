@@ -19,20 +19,18 @@ from .conftest import LOCAL_RESOURCES_DIR
 
 
 @pytest.mark.parametrize(
-    "filename, scene_index",
+    "filename, scene_index, expected_zarr_name",
     [
-        ("s_1_t_1_c_1_z_1.ome.tiff", 0),
-        ("s_3_t_1_c_3_z_5.ome.tiff", 2),
+        ("s_1_t_1_c_1_z_1.ome.tiff", 0, "s_1_t_1_c_1_z_1.ome.zarr"),
+        ("s_3_t_1_c_3_z_5.ome.tiff", 2, "s_3_t_1_c_3_z_5_Image_2.ome.zarr"),
     ],
 )
 def test_cli_file_to_zarr(
-    tmp_path: pathlib.Path, filename: str, scene_index: int
+    tmp_path: pathlib.Path, filename: str, scene_index: int, expected_zarr_name: str
 ) -> None:
     # Arrange
     runner = CliRunner()
     tiff = LOCAL_RESOURCES_DIR / filename
-    base = tiff.stem
-    out_name = f"{base}_converted"
 
     # Act
     result = runner.invoke(
@@ -41,8 +39,6 @@ def test_cli_file_to_zarr(
             str(tiff),
             "-d",
             str(tmp_path),
-            "-n",
-            out_name,
             "-s",
             str(scene_index),
         ],
@@ -50,7 +46,7 @@ def test_cli_file_to_zarr(
 
     # Assert
     assert result.exit_code == 0, result.output
-    zarr_path = tmp_path / f"{out_name}.ome.zarr"
+    zarr_path = tmp_path / expected_zarr_name
     assert zarr_path.exists()
 
     bio_in = BioImage(str(tiff))
@@ -122,7 +118,7 @@ def test_cli_zarr_resolution_levels(
     # Assert
     assert result.exit_code == 0, result.output
 
-    bio = BioImage(str(out_dir / f"{zarr_name}.ome.zarr"))
+    bio = BioImage(str(out_dir / "resolution_test_Image_0.ome.zarr"))
     bio.set_scene(0)
 
     assert tuple(bio.resolution_levels) == expected_levels
@@ -186,7 +182,7 @@ def test_cli_provenance_reader_kwargs(tmp_path: pathlib.Path) -> None:
 
     # Assert
     assert result.exit_code == 0, result.output
-    store = tmp_path / "plate.ome.zarr"
+    store = tmp_path / "plate_point name 1.ome.zarr"
     with open(store / _provenance_block(store)[STANDARD_METADATA_KEY]) as fh:
         sm = json.load(fh)
 

@@ -58,15 +58,18 @@ def test_batch_cli_contract_errors(
 # Integration tests
 # ---------------------------------------------------------------------
 @pytest.mark.parametrize(
-    "filename, scene_index",
+    "filename, scene_index, expected_zarr_name",
     [
-        ("s_1_t_1_c_1_z_1.ome.tiff", 0),
-        ("s_3_t_1_c_3_z_5.ome.tiff", 2),
+        ("s_1_t_1_c_1_z_1.ome.tiff", 0, "s_1_t_1_c_1_z_1.ome.zarr"),
+        ("s_3_t_1_c_3_z_5.ome.tiff", 2, "s_3_t_1_c_3_z_5_Image_2.ome.zarr"),
     ],
     ids=["batch-list-scene0", "batch-list-scene2"],
 )
 def test_batch_cli_list_mode(
-    tmp_path: pathlib.Path, filename: str, scene_index: int
+    tmp_path: pathlib.Path,
+    filename: str,
+    scene_index: int,
+    expected_zarr_name: str,
 ) -> None:
     """
     Verify batch CLI list-mode produces an .ome.zarr with pixel-identical data.
@@ -78,7 +81,7 @@ def test_batch_cli_list_mode(
     out_dir = tmp_path / "list_out"
     out_dir.mkdir(exist_ok=True)
 
-    out_zarr = out_dir / f"{src.stem}.ome.zarr"
+    out_zarr = out_dir / expected_zarr_name
     if out_zarr.exists():
         shutil.rmtree(out_zarr)
 
@@ -150,9 +153,12 @@ def test_batch_cli_csv_mode(tmp_path: pathlib.Path) -> None:
     # Assert
     assert result.exit_code == 0, result.output
 
-    for src_name in ["s_1_t_1_c_1_z_1.ome.tiff", "s_3_t_1_c_3_z_5.ome.tiff"]:
+    expected = {
+        "s_1_t_1_c_1_z_1.ome.tiff": out_dir / "s_1_t_1_c_1_z_1.ome.zarr",
+        "s_3_t_1_c_3_z_5.ome.tiff": out_dir / "s_3_t_1_c_3_z_5_Image_0.ome.zarr",
+    }
+    for src_name, out_z in expected.items():
         src = LOCAL_RESOURCES_DIR / src_name
-        out_z = out_dir / f"{src.stem}.ome.zarr"
         assert out_z.is_dir(), f"Missing CSV output for {src.name}"
 
         bio_in = BioImage(str(src))
@@ -225,8 +231,8 @@ def test_batch_cli_dir_mode(
     # Assert
     assert result.exit_code == 0, result.output
 
-    out_top = out_dir / f"{top_file.stem}.ome.zarr"
-    out_sub = out_dir / f"{sub_file.stem}.ome.zarr"
+    out_top = out_dir / "s_1_t_1_c_1_z_1.ome.zarr"
+    out_sub = out_dir / "s_3_t_1_c_3_z_5_Image_0.ome.zarr"
 
     assert out_top.is_dir()
     if expect_subdir_output:
