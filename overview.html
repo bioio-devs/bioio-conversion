@@ -530,9 +530,21 @@ If omitted, the writer’s default is used (<code class="docutils literal notran
 </ul>
 </li>
 </ul>
+<p><strong>Channel order</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--channel-order</span></code>: comma-separated source channels in the order to write
+them, as indices or as channel names from the source.
+<code class="docutils literal notranslate"><span class="pre">--channel-order</span> <span class="pre">2,0,1</span></code> writes source channel 2 as output channel 0, then
+source channels 0 and 1; <code class="docutils literal notranslate"><span class="pre">--channel-order</span> <span class="pre">Bright,EGFP,TaRFP</span></code> does the same
+by name, and the two forms may be mixed. Names are matched exactly against
+the source’s channel names for each scene. Every source channel must appear
+exactly once (the conversion refuses to drop or duplicate channels). Labels
+read from the source follow the new order; the channel display options
+below describe channels in <em>output</em> order.</p></li>
+</ul>
 <p><strong>Channel display options</strong></p>
 <p>These only take effect when <code class="docutils literal notranslate"><span class="pre">--channel-labels</span></code> is provided. All lists must
-align by channel index.</p>
+align by channel index (in output order when <code class="docutils literal notranslate"><span class="pre">--channel-order</span></code> is used).</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">--channel-labels</span></code>: comma-separated channel names
 (e.g. <code class="docutils literal notranslate"><span class="pre">DAPI,GFP,TRITC</span></code>).</p></li>

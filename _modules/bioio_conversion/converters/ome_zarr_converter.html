@@ -240,7 +240,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProcessPoolExecutor</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">fsspec</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numcodecs</span>
@@ -291,6 +291,7 @@
     <span class="n">out_dtype_str</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">src_bounds</span><span class="p">:</span> <span class="n">_Bounds</span><span class="p">,</span>
     <span class="n">dest_bounds</span><span class="p">:</span> <span class="n">_Bounds</span><span class="p">,</span>
+    <span class="n">channel_order</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Read one shard from the source and write it to an already-initialized</span>
@@ -311,10 +312,14 @@
     <span class="c1"># New image instance to access data per process</span>
     <span class="n">bio</span> <span class="o">=</span> <span class="n">BioImage</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
     <span class="n">bio</span><span class="o">.</span><span class="n">set_scene</span><span class="p">(</span><span class="n">scene_index</span><span class="p">)</span>
-    <span class="n">region_kwargs</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">region_kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
         <span class="n">native_order</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span> <span class="nb">slice</span><span class="p">(</span><span class="n">src_region</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">src_region</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">native_order</span><span class="p">))</span>
     <span class="p">}</span>
+    <span class="k">if</span> <span class="n">channel_order</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">DimensionNames</span><span class="o">.</span><span class="n">Channel</span> <span class="ow">in</span> <span class="n">native_order</span><span class="p">:</span>
+        <span class="c1"># Destination channels [lo, hi) come from the source channels they map to.</span>
+        <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="n">src_bounds</span><span class="p">[</span><span class="n">native_order</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">DimensionNames</span><span class="o">.</span><span class="n">Channel</span><span class="p">)]</span>
+        <span class="n">region_kwargs</span><span class="p">[</span><span class="n">DimensionNames</span><span class="o">.</span><span class="n">Channel</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">channel_order</span><span class="p">[</span><span class="n">lo</span><span class="p">:</span><span class="n">hi</span><span class="p">])</span>
     <span class="c1"># Read the shard via the reader's get_image_data slicing.</span>
     <span class="n">shard_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
         <span class="n">bio</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_image_data</span><span class="p">(</span><span class="n">native_order</span><span class="p">,</span> <span class="o">**</span><span class="n">region_kwargs</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">out_dtype</span>
@@ -350,6 +355,7 @@
         <span class="n">zarr_format</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">image_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">channels</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Channel</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">channel_order</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">rdefs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">creator_info</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">root_transform</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -415,6 +421,12 @@
 <span class="sd">        channels : Optional[List[Channel]]</span>
 <span class="sd">            Optional OMERO-style channel metadata. Only used when a ``'c'`` axis</span>
 <span class="sd">            exists. If omitted, minimal channel models are derived from the reader.</span>
+<span class="sd">        channel_order : Optional[Sequence[Union[int, str]]]</span>
+<span class="sd">            Source channels in the order to write them, as indices and/or</span>
+<span class="sd">            reader channel names, e.g. ``[2, 0, 1]`` or ``["Bright", "EGFP",</span>
+<span class="sd">            "TaRFP"]``. Must cover every source channel exactly once. Names are</span>
+<span class="sd">            resolved per scene. Labels derived from the reader follow the new</span>
+<span class="sd">            order; explicit ``channels`` are used as given.</span>
 <span class="sd">        rdefs : Optional[Dict[str, Any]]</span>
 <span class="sd">            Optional OMERO rendering defaults.</span>
 <span class="sd">        creator_info : Optional[Dict[str, Any]]</span>
@@ -505,6 +517,7 @@
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_writer_image_name</span> <span class="o">=</span> <span class="n">image_name</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_writer_channels</span> <span class="o">=</span> <span class="n">channels</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_channel_order</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">channel_order</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="n">channel_order</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_writer_rdefs</span> <span class="o">=</span> <span class="n">rdefs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_writer_creator_info</span> <span class="o">=</span> <span class="n">creator_info</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_writer_root_transform</span> <span class="o">=</span> <span class="n">root_transform</span>
@@ -599,8 +612,41 @@
             <span class="k">return</span> <span class="kc">None</span>
         <span class="k">return</span> <span class="n">units</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_channel_order</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">scene_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""``channel_order`` as source indices for ``scene_index``, or ``None``.</span>
+
+<span class="sd">        Names are looked up in the scene's channel names. The result must be a</span>
+<span class="sd">        permutation of every source channel, else ``ValueError``.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_channel_order</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="o">.</span><span class="n">set_scene</span><span class="p">(</span><span class="n">scene_index</span><span class="p">)</span>
+        <span class="n">dims</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">dims</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="o">.</span><span class="n">channel_names</span> <span class="ow">or</span> <span class="p">[]]</span>
+        <span class="n">scene</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"scene </span><span class="si">{</span><span class="n">scene_index</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">scene_names</span><span class="p">[</span><span class="n">scene_index</span><span class="p">]</span><span class="si">!r}</span><span class="s2">)"</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">order</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">names</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_channel_order</span>
+            <span class="p">]</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"channel_order names must be among </span><span class="si">{</span><span class="n">names</span><span class="si">}</span><span class="s2"> for </span><span class="si">{</span><span class="n">scene</span><span class="si">}</span><span class="s2">, "</span>
+                <span class="sa">f</span><span class="s2">"got </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_channel_order</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="kc">None</span>
+        <span class="n">ccount</span> <span class="o">=</span> <span class="n">dims</span><span class="o">.</span><span class="n">C</span> <span class="k">if</span> <span class="n">DimensionNames</span><span class="o">.</span><span class="n">Channel</span> <span class="ow">in</span> <span class="n">dims</span><span class="o">.</span><span class="n">order</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="k">if</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">order</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">ccount</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"channel_order must be a permutation of all </span><span class="si">{</span><span class="n">ccount</span><span class="si">}</span><span class="s2"> source "</span>
+                <span class="sa">f</span><span class="s2">"channels of </span><span class="si">{</span><span class="n">scene</span><span class="si">}</span><span class="s2"> (each of </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">ccount</span><span class="p">))</span><span class="si">}</span><span class="s2"> exactly "</span>
+                <span class="sa">f</span><span class="s2">"once), got </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_channel_order</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">order</span><span class="p">)</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_channels</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">axis_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">channel_count</span><span class="p">:</span> <span class="nb">int</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">axis_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">channel_count</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">channel_order</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Channel</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Resolve channel metadata for the writer.</span>
@@ -619,12 +665,15 @@
         <span class="k">if</span> <span class="s2">"c"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">axis_names</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
 
-        <span class="c1"># 3. Derive minimal channels from BioImage metadata</span>
-        <span class="n">labels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="o">.</span><span class="n">channel_names</span> <span class="ow">or</span> <span class="p">[</span>
-            <span class="sa">f</span><span class="s2">"Channel:</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">channel_count</span><span class="p">)</span>
-        <span class="p">]</span>
+        <span class="c1"># 3. Derive minimal channels from BioImage metadata, in output order</span>
+        <span class="n">labels</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bioimage</span><span class="o">.</span><span class="n">channel_names</span>
+            <span class="ow">or</span> <span class="p">[</span><span class="sa">f</span><span class="s2">"Channel:</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">channel_count</span><span class="p">)]</span>
+        <span class="p">)[:</span><span class="n">channel_count</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">channel_order</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">labels</span> <span class="o">=</span> <span class="p">[</span><span class="n">labels</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">channel_order</span><span class="p">]</span>
 
-        <span class="k">return</span> <span class="p">[</span><span class="n">Channel</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">lab</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"#FFFFFF"</span><span class="p">)</span> <span class="k">for</span> <span class="n">lab</span> <span class="ow">in</span> <span class="n">labels</span><span class="p">[:</span><span class="n">channel_count</span><span class="p">]]</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">Channel</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">lab</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"#FFFFFF"</span><span class="p">)</span> <span class="k">for</span> <span class="n">lab</span> <span class="ow">in</span> <span class="n">labels</span><span class="p">]</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_native_axes_and_shape_for_scene</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">scene_index</span><span class="p">:</span> <span class="nb">int</span>
@@ -731,6 +780,10 @@
             <span class="k">if</span> <span class="n">fs</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">FileExistsError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> already exists."</span><span class="p">)</span>
 
+        <span class="c1"># Fail before any store exists if the channel order does not fit a scene.</span>
+        <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">scene_indices</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_channel_order</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+
         <span class="c1"># A single process pool spans *all* scenes</span>
         <span class="n">pool</span> <span class="o">=</span> <span class="n">ProcessPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_n_workers</span><span class="p">)</span>
         <span class="n">futures</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
@@ -783,7 +836,8 @@
         <span class="c1"># (2) Channels</span>
         <span class="n">r</span> <span class="o">=</span> <span class="n">bio</span><span class="o">.</span><span class="n">reader</span>
         <span class="n">ccount</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">dims</span><span class="p">,</span> <span class="s2">"C"</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span> <span class="k">if</span> <span class="s2">"c"</span> <span class="ow">in</span> <span class="n">axis_names</span> <span class="k">else</span> <span class="mi">0</span>
-        <span class="n">channels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_channels</span><span class="p">(</span><span class="n">axis_names</span><span class="p">,</span> <span class="n">ccount</span><span class="p">)</span>
+        <span class="n">channel_order</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_channel_order</span><span class="p">(</span><span class="n">scene_index</span><span class="p">)</span>
+        <span class="n">channels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_channels</span><span class="p">(</span><span class="n">axis_names</span><span class="p">,</span> <span class="n">ccount</span><span class="p">,</span> <span class="n">channel_order</span><span class="p">)</span>
         <span class="n">pps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_infer_physical_pixel_sizes</span><span class="p">(</span><span class="n">axis_names</span><span class="p">)</span>
 
         <span class="n">dims</span> <span class="o">=</span> <span class="s2">""</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ax</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">axis_names</span><span class="p">)</span>
@@ -889,11 +943,14 @@
                     <span class="n">out_dtype_str</span><span class="p">,</span>
                     <span class="n">src_bounds</span><span class="p">,</span>
                     <span class="n">dest_bounds</span><span class="p">,</span>
+                    <span class="n">channel_order</span><span class="p">,</span>
                 <span class="p">)</span>
                 <span class="n">scene_futures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pool</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">_write_shard_process</span><span class="p">,</span> <span class="o">*</span><span class="n">task</span><span class="p">))</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">t_ax</span> <span class="o">=</span> <span class="n">dims</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">"T"</span><span class="p">)</span> <span class="k">if</span> <span class="s2">"t"</span> <span class="ow">in</span> <span class="n">axis_names</span> <span class="k">else</span> <span class="kc">None</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_write_fallback</span><span class="p">(</span><span class="n">writer</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">native_order</span><span class="p">,</span> <span class="n">t_ax</span><span class="p">,</span> <span class="n">level0_shape</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write_fallback</span><span class="p">(</span>
+                <span class="n">writer</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">native_order</span><span class="p">,</span> <span class="n">t_ax</span><span class="p">,</span> <span class="n">level0_shape</span><span class="p">,</span> <span class="n">channel_order</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="n">scene_futures</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_chunk_and_shard_params</span><span class="p">(</span>
@@ -961,6 +1018,7 @@
         <span class="n">native_order</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">t_ax</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">level0_shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">channel_order</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Single-threaded fallback write for non-auto-layout stores.</span>
 
@@ -984,7 +1042,9 @@
 
             <span class="c1"># Default to the full extent on every axis; only T is sub-sliced.</span>
             <span class="n">dest_slices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">slice</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">level0_shape</span><span class="p">]</span>
-            <span class="n">read_kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">slice</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">read_kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="n">channel_order</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">DimensionNames</span><span class="o">.</span><span class="n">Channel</span> <span class="ow">in</span> <span class="n">native_order</span><span class="p">:</span>
+                <span class="n">read_kwargs</span><span class="p">[</span><span class="n">DimensionNames</span><span class="o">.</span><span class="n">Channel</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">channel_order</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">t_ax</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="c1"># Read this T window from the source; write it at the (possibly</span>
                 <span class="c1"># offset) destination T window. Other axes stay full-extent.</span>
