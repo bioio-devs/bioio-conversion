@@ -396,3 +396,206 @@ def test_multiprocess_matches_singleprocess(tmp_path: pathlib.Path) -> None:
             parallel[str(lvl)][...],
             err_msg=f"Level {lvl}: parallel differs from serial",
         )
+
+
+# ---------------------------------------------------------------------------
+# Channel order
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "filename, channel_order, expected_zarr_name",
+    [
+        # TIFF TCZYX, C=3, multi-scene (scene 0 = "Image:0")
+        ("s_3_t_1_c_3_z_5.ome.tiff", [2, 0, 1], "reordered_Image_0.ome.zarr"),
+        # CZI CZYX, C=3, multi-scene (scene 0 = "P2")
+        ("s_3_t_1_c_3_z_5.czi", [1, 2, 0], "reordered_P2.ome.zarr"),
+        # ND2 TZCYX, C=4, multi-scene (scene 0 = "point name 1")
+        (
+            "ND2_dims_p2z5t3-2c4y32x32.nd2",
+            [3, 1, 0, 2],
+            "reordered_point name 1.ome.zarr",
+        ),
+    ],
+    ids=["tiff-tczyx", "czi-czyx", "nd2-tzcyx"],
+)
+@pytest.mark.parametrize(
+    "path_kwargs",
+    [
+        # v3 auto-layout: shards dispatched to worker processes
+        dict(zarr_format=3, shard_limit_bytes=_TEST_SHARD_LIMIT, n_workers=2),
+        # v2: single-threaded fallback write, batched along T
+        dict(zarr_format=2, tbatch=1),
+    ],
+    ids=["auto-layout", "fallback"],
+)
+def test_channel_order_permutes_pixels_and_labels(
+    tmp_path: pathlib.Path,
+    filename: str,
+    channel_order: List[int],
+    expected_zarr_name: str,
+    path_kwargs: dict,
+) -> None:
+    """
+    ``channel_order`` lists source channel indices in output order. Output
+    channel ``i`` must hold source channel ``channel_order[i]``'s pixels and
+    carry its label, on both the parallel shard path and the fallback path.
+    """
+    src_path = LOCAL_RESOURCES_DIR / filename
+
+    OmeZarrConverter(
+        source=str(src_path),
+        destination=str(tmp_path),
+        name="reordered",
+        scenes=0,
+        channel_order=channel_order,
+        **path_kwargs,
+    ).convert()
+
+    bio_in = BioImage(str(src_path)).reader
+    bio_in.set_scene(0)
+    bio_out = BioImage(str(tmp_path / expected_zarr_name)).reader
+    bio_out.set_scene(0)
+
+    assert bio_out.shape == bio_in.shape
+    assert bio_out.channel_names == [bio_in.channel_names[i] for i in channel_order]
+
+    expected = bio_in.get_image_data("TCZYX", C=list(channel_order))
+    assert_array_equal(bio_out.get_image_data("TCZYX"), expected)
+
+
+def test_channel_order_keeps_explicit_channels_as_given(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Explicit ``channels`` describe the output, so they are not re-permuted."""
+    from bioio_ome_zarr.writers import Channel
+
+    src_path = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.ome.tiff"
+    labels = ["first", "second", "third"]
+
+    OmeZarrConverter(
+        source=str(src_path),
+        destination=str(tmp_path),
+        name="explicit",
+        scenes=0,
+        channel_order=[2, 0, 1],
+        channels=[Channel(label=lab, color="#FFFFFF") for lab in labels],
+    ).convert()
+
+    bio_out = BioImage(str(tmp_path / "explicit_Image_0.ome.zarr")).reader
+    assert bio_out.channel_names == labels
+
+
+@pytest.mark.parametrize(
+    "channel_order, match",
+    [
+        ([0, 1], "permutation of all 3"),  # too short
+        ([0, 1, 2, 3], "permutation of all 3"),  # too long
+        ([0, 1, 5], "permutation of all 3"),  # out of range
+        ([0, 0, 1], "permutation of all 3"),  # duplicate
+        ([0, -1, 2], "permutation of all 3"),  # negative
+        ([], "permutation of all 3"),  # empty
+    ],
+    ids=["short", "long", "out-of-range", "duplicate", "negative", "empty"],
+)
+def test_channel_order_rejects_non_permutations(
+    tmp_path: pathlib.Path, channel_order: List[int], match: str
+) -> None:
+    """A bad order raises ``ValueError`` and creates no store."""
+    src_path = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.ome.tiff"
+
+    with pytest.raises(ValueError, match=match):
+        OmeZarrConverter(
+            source=str(src_path),
+            destination=str(tmp_path),
+            name="bad_order",
+            scenes=0,
+            channel_order=channel_order,
+        ).convert()
+
+    assert not list(tmp_path.glob("*.ome.zarr"))
+
+
+@pytest.mark.parametrize(
+    "filename, channel_order, expected_indices, expected_zarr_name",
+    [
+        # all names
+        (
+            "s_3_t_1_c_3_z_5.ome.tiff",
+            ["Bright", "EGFP", "TaRFP"],
+            [2, 0, 1],
+            "by_name_Image_0.ome.zarr",
+        ),
+        # names and indices mixed
+        (
+            "s_3_t_1_c_3_z_5.czi",
+            ["TaRFP", 2, "EGFP"],
+            [1, 2, 0],
+            "by_name_P2.ome.zarr",
+        ),
+        # names containing spaces and punctuation
+        (
+            "ND2_dims_p2z5t3-2c4y32x32.nd2",
+            ["Brightfield", "Widefield Far-Red", "Widefield Green", "Widefield Red"],
+            [3, 2, 0, 1],
+            "by_name_point name 1.ome.zarr",
+        ),
+    ],
+    ids=["tiff-names", "czi-mixed", "nd2-names"],
+)
+def test_channel_order_accepts_channel_names(
+    tmp_path: pathlib.Path,
+    filename: str,
+    channel_order: List[Union[int, str]],
+    expected_indices: List[int],
+    expected_zarr_name: str,
+) -> None:
+    """Entries may be channel names, resolved against the reader's names."""
+    src_path = LOCAL_RESOURCES_DIR / filename
+
+    OmeZarrConverter(
+        source=str(src_path),
+        destination=str(tmp_path),
+        name="by_name",
+        scenes=0,
+        channel_order=channel_order,
+    ).convert()
+
+    bio_in = BioImage(str(src_path)).reader
+    bio_in.set_scene(0)
+    bio_out = BioImage(str(tmp_path / expected_zarr_name)).reader
+
+    assert bio_out.channel_names == [bio_in.channel_names[i] for i in expected_indices]
+    assert_array_equal(
+        bio_out.get_image_data("TCZYX"),
+        bio_in.get_image_data("TCZYX", C=expected_indices),
+    )
+
+
+@pytest.mark.parametrize(
+    "channel_order, match",
+    [
+        (
+            ["Bright", "EGFP", "GFP"],
+            "names must be among \\['EGFP', 'TaRFP', 'Bright'\\]",
+        ),
+        (["Bright", "EGFP", 0], "permutation of all 3"),  # EGFP is 0: a repeat
+        (["Bright", "EGFP"], "permutation of all 3"),
+    ],
+    ids=["unknown-name", "name-index-collision", "short"],
+)
+def test_channel_order_rejects_bad_names(
+    tmp_path: pathlib.Path, channel_order: List[Union[int, str]], match: str
+) -> None:
+    src_path = LOCAL_RESOURCES_DIR / "s_3_t_1_c_3_z_5.ome.tiff"
+
+    with pytest.raises(ValueError, match=match):
+        OmeZarrConverter(
+            source=str(src_path),
+            destination=str(tmp_path),
+            name="bad_names",
+            scenes=0,
+            channel_order=channel_order,
+        ).convert()
+
+    assert not list(tmp_path.glob("*.ome.zarr"))
