@@ -173,6 +173,29 @@ def test_czi_subblock_metadata_embedded(tmp_path: pathlib.Path) -> None:
     assert all(isinstance(sb, dict) for sb in subblocks), "subblocks should be dicts"
 
 
+def test_czi_subblock_metadata_scoped_per_scene(tmp_path: pathlib.Path) -> None:
+    """Each scene's store carries only that scene's subblocks."""
+    _convert(
+        tmp_path,
+        "s_3_t_1_c_3_z_5.czi",
+        "czi",
+        scenes=None,
+        provenance_reader_kwargs={"include_subblock_metadata": True},
+    )
+    stores = sorted(tmp_path.glob("*.ome.zarr"))
+    assert len(stores) == 3
+
+    scene_per_store = []
+    for store in stores:
+        native = _read_json(store, _provenance(store)[NATIVE_METADATA_KEY])
+        subblocks = native["ImageDocument"]["Subblocks"]["Subblock"]
+        assert len(subblocks) == 15
+        scene_per_store.append({sb["@S"] for sb in subblocks})
+
+    assert all(len(scenes) == 1 for scenes in scene_per_store)
+    assert len(set().union(*scene_per_store)) == 3
+
+
 def test_nd2_provenance_use_plate_96(tmp_path: pathlib.Path) -> None:
     """
     plate=PLATE_96 via provenance_reader_kwargs should populate row/column
