@@ -498,9 +498,9 @@ def test_pyramid_layout(dims: str, levels: list) -> None:
     base_shape = levels[0][0]
     level_shapes = build_pyramid_shapes(base_shape, dims)
 
-    assert len(level_shapes) == len(
-        levels
-    ), f"expected {len(levels)} levels, got {len(level_shapes)}: {level_shapes}"
+    assert len(level_shapes) == len(levels), (
+        f"expected {len(levels)} levels, got {len(level_shapes)}: {level_shapes}"
+    )
 
     all_chunks, all_shards = choose_pyramid_layout(level_shapes, _DTYPE, dims)
 
@@ -518,13 +518,13 @@ def test_pyramid_layout(dims: str, levels: list) -> None:
         chunk_bytes = math.prod(chunk) * _DTYPE.itemsize
         shard_bytes = math.prod(shard) * _DTYPE.itemsize
 
-        assert (
-            chunk_bytes <= _16MiB
-        ), f"level {i}: chunk {chunk_bytes:,} B exceeds {_16MiB:,} B limit"  # noqa
-        assert (
-            shard_bytes <= _4GiB
-        ), f"level {i}: shard {shard_bytes:,} B exceeds {_4GiB:,} B limit"  # noqa
+        assert chunk_bytes <= _16MiB, (
+            f"level {i}: chunk {chunk_bytes:,} B exceeds {_16MiB:,} B limit"
+        )  # noqa
+        assert shard_bytes <= _4GiB, (
+            f"level {i}: shard {shard_bytes:,} B exceeds {_4GiB:,} B limit"
+        )  # noqa
 
-        assert (
-            _atlas_fits(lvl_shape, dims) == exp_fits
-        ), f"level {i}: atlas_fits mismatch (expected {exp_fits})"
+        assert _atlas_fits(lvl_shape, dims) == exp_fits, (
+            f"level {i}: atlas_fits mismatch (expected {exp_fits})"
+        )
