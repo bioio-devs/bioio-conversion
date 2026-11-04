@@ -331,8 +331,8 @@ align by channel index (in output order when `--channel-order` is used).
 
   * Example: `--provenance-reader-kwargs '{"plate": "96"}'` to let the ND2
     reader derive well row/column from a 96-well plate layout.
-  * Example: `--provenance-reader-kwargs '{"use_aicspylibczi": true,
-    "include_subblock_metadata": true}'` to embed per-subblock CZI metadata.
+  * Example: `--provenance-reader-kwargs '{"include_subblock_metadata": true}'` to
+    embed per-subblock CZI metadata.
 
   The value is JSON so kwarg types survive intact — `"96"` stays a string and
   `true` becomes a bool, rather than both arriving as text.
