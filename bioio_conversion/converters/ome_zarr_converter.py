@@ -3,7 +3,7 @@ import re
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import fsspec
 import numcodecs
@@ -55,6 +55,7 @@ def _write_shard_process(
     out_dtype_str: str,
     src_bounds: _Bounds,
     dest_bounds: _Bounds,
+    channel_order: Optional[Tuple[int, ...]] = None,
 ) -> None:
     """
     Read one shard from the source and write it to an already-initialized
@@ -75,10 +76,14 @@ def _write_shard_process(
     # New image instance to access data per process
     bio = BioImage(source)
     bio.set_scene(scene_index)
-    region_kwargs = {
+    region_kwargs: Dict[str, Any] = {
         native_order[i]: slice(src_region[i].start, src_region[i].stop)
         for i in range(len(native_order))
     }
+    if channel_order is not None and DimensionNames.Channel in native_order:
+        # Destination channels [lo, hi) come from the source channels they map to.
+        lo, hi = src_bounds[native_order.index(DimensionNames.Channel)]
+        region_kwargs[DimensionNames.Channel] = list(channel_order[lo:hi])
     # Read the shard via the reader's get_image_data slicing.
     shard_data = np.asarray(
         bio.reader.get_image_data(native_order, **region_kwargs), dtype=out_dtype
@@ -110,6 +115,7 @@ class OmeZarrConverter:
         zarr_format: Optional[int] = None,
         image_name: Optional[str] = None,
         channels: Optional[List[Channel]] = None,
+        channel_order: Optional[Sequence[Union[int, str]]] = None,
         rdefs: Optional[Dict[str, Any]] = None,
         creator_info: Optional[Dict[str, Any]] = None,
         root_transform: Optional[Dict[str, Any]] = None,
@@ -175,6 +181,12 @@ class OmeZarrConverter:
         channels : Optional[List[Channel]]
             Optional OMERO-style channel metadata. Only used when a ``'c'`` axis
             exists. If omitted, minimal channel models are derived from the reader.
+        channel_order : Optional[Sequence[Union[int, str]]]
+            Source channels in the order to write them, as indices and/or
+            reader channel names, e.g. ``[2, 0, 1]`` or ``["Bright", "EGFP",
+            "TaRFP"]``. Must cover every source channel exactly once. Names are
+            resolved per scene. Labels derived from the reader follow the new
+            order; explicit ``channels`` are used as given.
         rdefs : Optional[Dict[str, Any]]
             Optional OMERO rendering defaults.
         creator_info : Optional[Dict[str, Any]]
@@ -265,6 +277,7 @@ class OmeZarrConverter:
         )
         self._writer_image_name = image_name
         self._writer_channels = channels
+        self._channel_order = None if channel_order is None else list(channel_order)
         self._writer_rdefs = rdefs
         self._writer_creator_info = creator_info
         self._writer_root_transform = root_transform
@@ -358,8 +371,41 @@ class OmeZarrConverter:
             return None
         return units
 
+    def _resolve_channel_order(self, scene_index: int) -> Optional[Tuple[int, ...]]:
+        """``channel_order`` as source indices for ``scene_index``, or ``None``.
+
+        Names are looked up in the scene's channel names. The result must be a
+        permutation of every source channel, else ``ValueError``.
+        """
+        if self._channel_order is None:
+            return None
+        self.bioimage.set_scene(scene_index)
+        dims = self.bioimage.reader.dims
+        names = [str(n) for n in self.bioimage.channel_names or []]
+        scene = f"scene {scene_index} ({self.scene_names[scene_index]!r})"
+        try:
+            order = [
+                names.index(c) if isinstance(c, str) else c for c in self._channel_order
+            ]
+        except ValueError:
+            raise ValueError(
+                f"channel_order names must be among {names} for {scene}, "
+                f"got {self._channel_order}"
+            ) from None
+        ccount = dims.C if DimensionNames.Channel in dims.order else 0
+        if sorted(order) != list(range(ccount)):
+            raise ValueError(
+                f"channel_order must be a permutation of all {ccount} source "
+                f"channels of {scene} (each of {list(range(ccount))} exactly "
+                f"once), got {self._channel_order}"
+            )
+        return tuple(order)
+
     def _resolve_channels(
-        self, axis_names: List[str], channel_count: int
+        self,
+        axis_names: List[str],
+        channel_count: int,
+        channel_order: Optional[Tuple[int, ...]] = None,
     ) -> Optional[List[Channel]]:
         """
         Resolve channel metadata for the writer.
@@ -383,18 +429,19 @@ class OmeZarrConverter:
         # 3. Derive minimal channels from BioImage metadata, auto-detecting a
         #    display color per channel. ``self.bioimage`` is already set to the
         #    active scene by the caller, so get_channel_colors inspects it.
-        labels = self.bioimage.channel_names or [
-            f"Channel:{i}" for i in range(channel_count)
-        ]
+        labels = list(
+            self.bioimage.channel_names
+            or [f"Channel:{i}" for i in range(channel_count)]
+        )[:channel_count]
         colors = get_channel_colors(self.bioimage)
-
-        return [
-            Channel(
-                label=lab,
-                color=colors[i] if i < len(colors) else "FFFFFF",
-            )
-            for i, lab in enumerate(labels[:channel_count])
+        colors = [
+            colors[i] if i < len(colors) else "FFFFFF" for i in range(len(labels))
         ]
+        if channel_order is not None:
+            labels = [labels[i] for i in channel_order]
+            colors = [colors[i] for i in channel_order]
+
+        return [Channel(label=lab, color=col) for lab, col in zip(labels, colors)]
 
     def _native_axes_and_shape_for_scene(
         self, scene_index: int
@@ -499,6 +546,10 @@ class OmeZarrConverter:
             if fs.exists(path):
                 raise FileExistsError(f"{path} already exists.")
 
+        # Fail before any store exists if the channel order does not fit a scene.
+        for idx in self.scene_indices:
+            self._resolve_channel_order(idx)
+
         # A single process pool spans *all* scenes
         pool = ProcessPoolExecutor(max_workers=self._n_workers)
         futures: List[Any] = []
@@ -550,7 +601,8 @@ class OmeZarrConverter:
         # (2) Channels
         r = bio.reader
         ccount = int(getattr(r.dims, "C", 1)) if "c" in axis_names else 0
-        channels = self._resolve_channels(axis_names, ccount)
+        channel_order = self._resolve_channel_order(scene_index)
+        channels = self._resolve_channels(axis_names, ccount, channel_order)
         pps = self._infer_physical_pixel_sizes(axis_names)
 
         dims = "".join(ax.upper() for ax in axis_names)
@@ -656,11 +708,14 @@ class OmeZarrConverter:
                     out_dtype_str,
                     src_bounds,
                     dest_bounds,
+                    channel_order,
                 )
                 scene_futures.append(pool.submit(_write_shard_process, *task))
         else:
             t_ax = dims.index("T") if "t" in axis_names else None
-            self._write_fallback(writer, r, native_order, t_ax, level0_shape)
+            self._write_fallback(
+                writer, r, native_order, t_ax, level0_shape, channel_order
+            )
         return scene_futures
 
     def _resolve_chunk_and_shard_params(
@@ -728,6 +783,7 @@ class OmeZarrConverter:
         native_order: str,
         t_ax: Optional[int],
         level0_shape: Tuple[int, ...],
+        channel_order: Optional[Tuple[int, ...]] = None,
     ) -> None:
         """Single-threaded fallback write for non-auto-layout stores.
 
@@ -751,7 +807,9 @@ class OmeZarrConverter:
 
             # Default to the full extent on every axis; only T is sub-sliced.
             dest_slices: List[slice] = [slice(0, s) for s in level0_shape]
-            read_kwargs: Dict[str, slice] = {}
+            read_kwargs: Dict[str, Any] = {}
+            if channel_order is not None and DimensionNames.Channel in native_order:
+                read_kwargs[DimensionNames.Channel] = list(channel_order)
             if t_ax is not None:
                 # Read this T window from the source; write it at the (possibly
                 # offset) destination T window. Other axes stay full-extent.

@@ -48,6 +48,7 @@ class OmeZarrInitOptions(TypedDict, total=False):
     # data / metadata
     dtype: str
     channels: List[Channel]
+    channel_order: List[Union[int, str]]
     physical_pixel_size: List[float]
     zarr_format: int
 
@@ -395,6 +396,20 @@ def ome_zarr_options(
                     "Comma-separated axis units, in the same order as "
                     "--axes-names. Use blank or 'none'/'null' for missing "
                     "units. Example for (t,c,z,y,x): 's,,um,um,um'."
+                ),
+            ),
+            # ── Channel order ─────────────────────────────────────────────
+            click.option(
+                "--channel-order",
+                type=StrListType(),
+                default=None,
+                help=(
+                    "Comma-separated source channels in the order to write "
+                    "them, as indices ('2,0,1' writes source channel 2 first) "
+                    "or source channel names ('Bright,EGFP,TaRFP'); the two may "
+                    "be mixed. Must cover every source channel exactly once. "
+                    "Source labels follow the new order; --channel-labels and "
+                    "friends describe the output order."
                 ),
             ),
             # ── Channel controls (only used when --channel-labels is set) ─
@@ -769,6 +784,12 @@ def build_ome_zarr_init_opts(**kwargs: Any) -> OmeZarrInitOptions:
             w_start=kwargs.get("channel_window_start"),
             w_end=kwargs.get("channel_window_end"),
         )
+
+    # Channel order: integer tokens are indices, anything else a channel name
+    if kwargs.get("channel_order"):
+        init_opts["channel_order"] = [
+            int(t) if t.isdigit() else t for t in kwargs["channel_order"]
+        ]
 
     # Provenance
     if kwargs.get("include_provenance"):
