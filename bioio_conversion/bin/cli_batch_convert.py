@@ -50,7 +50,7 @@ from .ome_zarr_options import build_ome_zarr_init_opts, ome_zarr_options
 @click.option(
     "--paths",
     multiple=True,
-    help=("Explicit input file paths (required when --mode list). " "Repeatable."),
+    help=("Explicit input file paths (required when --mode list). Repeatable."),
 )
 @ome_zarr_options(require_destination=True)
 def main(
