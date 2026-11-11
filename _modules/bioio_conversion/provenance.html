@@ -339,10 +339,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_plugin</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">bioimage</span><span class="o">.</span><span class="n">reader</span><span class="p">)</span><span class="o">.</span><span class="vm">__module__</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"."</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="s2">"-"</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_reader_kwargs</span> <span class="o">=</span> <span class="n">metadata_reader_kwargs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_bioimage</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">BioImage</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_cache</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
-            <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span>
-        <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_cache</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_cache</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_metadata_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BioImage</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""The reader used to source provenance metadata, cached across scenes."""</span>
@@ -366,27 +363,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_bioimage</span> <span class="o">=</span> <span class="n">img</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_bioimage</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_metadata_dicts</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]:</span>
-<span class="w">        </span><span class="sd">"""Whole-file ``(ome_dict, native_dict)`` for the source, computed once."""</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_cache</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">meta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_reader</span><span class="p">()</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_cache</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="n">_metadata_as_dict</span><span class="p">(</span><span class="n">meta</span><span class="p">,</span> <span class="s2">"ome_metadata"</span><span class="p">,</span> <span class="s2">"OME"</span><span class="p">),</span>
-                <span class="n">_metadata_as_dict</span><span class="p">(</span><span class="n">meta</span><span class="p">,</span> <span class="s2">"metadata"</span><span class="p">,</span> <span class="s2">"native"</span><span class="p">),</span>
-            <span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_cache</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_whole_file_provenance</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">"""The whole-file part of the block and its sidecars.</span>
-
-<span class="sd">        File name, conversion timestamp, package versions, reader plugin, and the</span>
-<span class="sd">        metadata sidecars are all scene-independent, so they are built on first</span>
-<span class="sd">        use and reused for every scene.</span>
-<span class="sd">        """</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_whole_file_block</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""The scene-independent part of the block, built on first use."""</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_cache</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_cache</span>
 
@@ -396,31 +374,12 @@
             <span class="k">if</span> <span class="n">version</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">versions</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">version</span>
 
-        <span class="n">block</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_cache</span> <span class="o">=</span> <span class="p">{</span>
             <span class="n">SOURCE_FILE_KEY</span><span class="p">:</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_source</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
             <span class="n">CONVERTED_KEY</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
             <span class="n">PACKAGE_VERSIONS_KEY</span><span class="p">:</span> <span class="n">versions</span><span class="p">,</span>
             <span class="n">PLUGIN_KEY</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_plugin</span><span class="p">,</span>
         <span class="p">}</span>
-        <span class="n">sidecars</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-
-        <span class="k">def</span><span class="w"> </span><span class="nf">attach</span><span class="p">(</span>
-            <span class="n">pointer_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span>
-        <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">content</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">return</span>
-            <span class="k">for</span> <span class="n">existing_path</span><span class="p">,</span> <span class="n">existing</span> <span class="ow">in</span> <span class="n">sidecars</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                <span class="k">if</span> <span class="n">existing</span> <span class="o">==</span> <span class="n">content</span><span class="p">:</span>
-                    <span class="n">block</span><span class="p">[</span><span class="n">pointer_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">existing_path</span>
-                    <span class="k">return</span>
-            <span class="n">block</span><span class="p">[</span><span class="n">pointer_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">path</span>
-            <span class="n">sidecars</span><span class="p">[</span><span class="n">path</span><span class="p">]</span> <span class="o">=</span> <span class="n">content</span>
-
-        <span class="n">ome_dict</span><span class="p">,</span> <span class="n">native_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_metadata_dicts</span><span class="p">()</span>
-        <span class="n">attach</span><span class="p">(</span><span class="n">OME_METADATA_KEY</span><span class="p">,</span> <span class="n">OME_METADATA_PATH</span><span class="p">,</span> <span class="n">ome_dict</span><span class="p">)</span>
-        <span class="n">attach</span><span class="p">(</span><span class="n">NATIVE_METADATA_KEY</span><span class="p">,</span> <span class="n">NATIVE_METADATA_PATH</span><span class="p">,</span> <span class="n">native_dict</span><span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_cache</span> <span class="o">=</span> <span class="p">(</span><span class="n">block</span><span class="p">,</span> <span class="n">sidecars</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_cache</span>
 
 <div class="viewcode-block" id="ProvenanceBuilder.provenance_from_scene">
@@ -445,9 +404,32 @@
             <span class="p">)</span>
             <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="p">{}</span>
 
-        <span class="n">base</span><span class="p">,</span> <span class="n">whole_file_sidecars</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_provenance</span><span class="p">()</span>
-        <span class="n">sidecars</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">whole_file_sidecars</span><span class="p">,</span> <span class="n">STANDARD_METADATA_PATH</span><span class="p">:</span> <span class="n">fields</span><span class="p">}</span>
-        <span class="n">block</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">base</span><span class="p">,</span> <span class="n">STANDARD_METADATA_KEY</span><span class="p">:</span> <span class="n">STANDARD_METADATA_PATH</span><span class="p">}</span>
+        <span class="n">block</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_whole_file_block</span><span class="p">(),</span>
+            <span class="n">STANDARD_METADATA_KEY</span><span class="p">:</span> <span class="n">STANDARD_METADATA_PATH</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">sidecars</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">STANDARD_METADATA_PATH</span><span class="p">:</span> <span class="n">fields</span><span class="p">}</span>
+
+        <span class="c1"># Metadata can differ per scene (e.g. scene-scoped subblocks), so it is</span>
+        <span class="c1"># read for each scene; identical OME and native content shares one sidecar.</span>
+        <span class="k">for</span> <span class="n">pointer_key</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">label</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">OME_METADATA_KEY</span><span class="p">,</span> <span class="n">OME_METADATA_PATH</span><span class="p">,</span> <span class="s2">"ome_metadata"</span><span class="p">,</span> <span class="s2">"OME"</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">NATIVE_METADATA_KEY</span><span class="p">,</span> <span class="n">NATIVE_METADATA_PATH</span><span class="p">,</span> <span class="s2">"metadata"</span><span class="p">,</span> <span class="s2">"native"</span><span class="p">),</span>
+        <span class="p">):</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">_metadata_as_dict</span><span class="p">(</span><span class="n">meta</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">label</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">content</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">existing_path</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span>
+                    <span class="n">p</span>
+                    <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">sidecars</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="n">p</span> <span class="o">!=</span> <span class="n">STANDARD_METADATA_PATH</span> <span class="ow">and</span> <span class="n">c</span> <span class="o">==</span> <span class="n">content</span>
+                <span class="p">),</span>
+                <span class="n">path</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">block</span><span class="p">[</span><span class="n">pointer_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">existing_path</span>
+            <span class="n">sidecars</span><span class="p">[</span><span class="n">existing_path</span><span class="p">]</span> <span class="o">=</span> <span class="n">content</span>
+
         <span class="k">return</span> <span class="p">{</span><span class="n">PROVENANCE_ATTR_KEY</span><span class="p">:</span> <span class="n">block</span><span class="p">},</span> <span class="n">sidecars</span></div>
 </div>
 

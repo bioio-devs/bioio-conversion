@@ -575,7 +575,8 @@ different reader settings than the pixel read. Requires
 <ul class="simple">
 <li><p>Example: <code class="docutils literal notranslate"><span class="pre">--provenance-reader-kwargs</span> <span class="pre">'{&quot;plate&quot;:</span> <span class="pre">&quot;96&quot;}'</span></code> to let the ND2
 reader derive well row/column from a 96-well plate layout.</p></li>
-<li><p>Example: <code class="docutils literal notranslate"><span class="pre">--provenance-reader-kwargs</span> <span class="pre">'{&quot;use_aicspylibczi&quot;:</span> <span class="pre">true,</span> <span class="pre">&quot;include_subblock_metadata&quot;:</span> <span class="pre">true}'</span></code> to embed per-subblock CZI metadata.</p></li>
+<li><p>Example: <code class="docutils literal notranslate"><span class="pre">--provenance-reader-kwargs</span> <span class="pre">'{&quot;include_subblock_metadata&quot;:</span> <span class="pre">true}'</span></code> to
+embed per-subblock CZI metadata.</p></li>
 </ul>
 <p>The value is JSON so kwarg types survive intact — <code class="docutils literal notranslate"><span class="pre">&quot;96&quot;</span></code> stays a string and
 <code class="docutils literal notranslate"><span class="pre">true</span></code> becomes a bool, rather than both arriving as text.</p>
