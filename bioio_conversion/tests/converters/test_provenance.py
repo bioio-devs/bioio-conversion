@@ -154,22 +154,19 @@ def test_metadata_json_sidecars(
 
 def test_czi_subblock_metadata_embedded(tmp_path: pathlib.Path) -> None:
     """
-    When aicspylibczi kwargs are passed via provenance_reader_kwargs the native
+    When include_subblock_metadata is passed via provenance_reader_kwargs the native
     XML carries per-subblock metadata under <Subblocks>.
     """
     _convert(
         tmp_path,
         "s_3_t_1_c_3_z_5.czi",
         "czi",
-        provenance_reader_kwargs={
-            "use_aicspylibczi": True,
-            "include_subblock_metadata": True,
-        },
+        provenance_reader_kwargs={"include_subblock_metadata": True},
     )
     store = tmp_path / "czi_P2.ome.zarr"
     native = _read_json(store, _provenance(store)[NATIVE_METADATA_KEY])
     subblocks = native["ImageDocument"]["Subblocks"]["Subblock"]
-    assert subblocks, "no Subblocks (aicspylibczi?)"
+    assert subblocks, "no Subblocks"
     assert all(isinstance(sb, dict) for sb in subblocks), "subblocks should be dicts"
 
 
