@@ -100,10 +100,7 @@ class ProvenanceBuilder:
         self._plugin = type(bioimage.reader).__module__.split(".")[0].replace("_", "-")
         self._metadata_reader_kwargs = metadata_reader_kwargs
         self._metadata_bioimage: Optional[BioImage] = None
-        self._metadata_cache: Optional[
-            Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]
-        ] = None
-        self._whole_file_cache: Optional[Tuple[Dict[str, Any], Dict[str, Any]]] = None
+        self._whole_file_cache: Optional[Dict[str, Any]] = None
 
     def _metadata_reader(self) -> BioImage:
         """The reader used to source provenance metadata, cached across scenes."""
@@ -127,27 +124,8 @@ class ProvenanceBuilder:
         self._metadata_bioimage = img
         return self._metadata_bioimage
 
-    def _metadata_dicts(
-        self,
-    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        """Whole-file ``(ome_dict, native_dict)`` for the source, computed once."""
-        if self._metadata_cache is None:
-            meta = self._metadata_reader()
-            self._metadata_cache = (
-                _metadata_as_dict(meta, "ome_metadata", "OME"),
-                _metadata_as_dict(meta, "metadata", "native"),
-            )
-        return self._metadata_cache
-
-    def _whole_file_provenance(
-        self,
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """The whole-file part of the block and its sidecars.
-
-        File name, conversion timestamp, package versions, reader plugin, and the
-        metadata sidecars are all scene-independent, so they are built on first
-        use and reused for every scene.
-        """
+    def _whole_file_block(self) -> Dict[str, Any]:
+        """The scene-independent part of the block, built on first use."""
         if self._whole_file_cache is not None:
             return self._whole_file_cache
 
@@ -157,31 +135,12 @@ class ProvenanceBuilder:
             if version is not None:
                 versions[name] = version
 
-        block: Dict[str, Any] = {
+        self._whole_file_cache = {
             SOURCE_FILE_KEY: Path(self._source).name,
             CONVERTED_KEY: datetime.datetime.now(datetime.timezone.utc).isoformat(),
             PACKAGE_VERSIONS_KEY: versions,
             PLUGIN_KEY: self._plugin,
         }
-        sidecars: Dict[str, Any] = {}
-
-        def attach(
-            pointer_key: str, path: str, content: Optional[Dict[str, Any]]
-        ) -> None:
-            if content is None:
-                return
-            for existing_path, existing in sidecars.items():
-                if existing == content:
-                    block[pointer_key] = existing_path
-                    return
-            block[pointer_key] = path
-            sidecars[path] = content
-
-        ome_dict, native_dict = self._metadata_dicts()
-        attach(OME_METADATA_KEY, OME_METADATA_PATH, ome_dict)
-        attach(NATIVE_METADATA_KEY, NATIVE_METADATA_PATH, native_dict)
-
-        self._whole_file_cache = (block, sidecars)
         return self._whole_file_cache
 
     def provenance_from_scene(
@@ -204,9 +163,32 @@ class ProvenanceBuilder:
             )
             return None, {}
 
-        base, whole_file_sidecars = self._whole_file_provenance()
-        sidecars = {**whole_file_sidecars, STANDARD_METADATA_PATH: fields}
-        block = {**base, STANDARD_METADATA_KEY: STANDARD_METADATA_PATH}
+        block = {
+            **self._whole_file_block(),
+            STANDARD_METADATA_KEY: STANDARD_METADATA_PATH,
+        }
+        sidecars: Dict[str, Any] = {STANDARD_METADATA_PATH: fields}
+
+        # Metadata can differ per scene (e.g. scene-scoped subblocks), so it is
+        # read for each scene; identical OME and native content shares one sidecar.
+        for pointer_key, path, attr, label in (
+            (OME_METADATA_KEY, OME_METADATA_PATH, "ome_metadata", "OME"),
+            (NATIVE_METADATA_KEY, NATIVE_METADATA_PATH, "metadata", "native"),
+        ):
+            content = _metadata_as_dict(meta, attr, label)
+            if content is None:
+                continue
+            existing_path = next(
+                (
+                    p
+                    for p, c in sidecars.items()
+                    if p != STANDARD_METADATA_PATH and c == content
+                ),
+                path,
+            )
+            block[pointer_key] = existing_path
+            sidecars[existing_path] = content
+
         return {PROVENANCE_ATTR_KEY: block}, sidecars
 
 
