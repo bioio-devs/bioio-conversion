@@ -17,6 +17,7 @@ from bioio_ome_zarr.writers.ome_zarr_writer import MultiResolutionShapeSpec
 from bioio_ome_zarr.writers.utils import multiscale_chunk_size_from_memory_target
 from zarr.codecs import BloscCodec
 
+from ..channel_colors import get_channel_colors
 from ..provenance import ProvenanceBuilder, write_sidecars
 from ..sharding import (
     DEFAULT_CHUNK_LIMIT_BYTES,
@@ -412,7 +413,9 @@ class OmeZarrConverter:
         Policy:
         - If the user explicitly provided channels, always honor them
         (even if no 'c' axis is present).
-        - Otherwise, only derive channels if a 'c' axis exists.
+        - Otherwise, only derive channels if a 'c' axis exists, auto-assigning
+        display colors via :func:`get_channel_colors` (brightfield → white,
+        fluorescent channels → a perceptually-distinct palette).
         """
 
         # 1. User explicitly supplied channels → always use them
@@ -423,15 +426,22 @@ class OmeZarrConverter:
         if "c" not in axis_names:
             return None
 
-        # 3. Derive minimal channels from BioImage metadata, in output order
+        # 3. Derive minimal channels from BioImage metadata, auto-detecting a
+        #    display color per channel. ``self.bioimage`` is already set to the
+        #    active scene by the caller, so get_channel_colors inspects it.
         labels = list(
             self.bioimage.channel_names
             or [f"Channel:{i}" for i in range(channel_count)]
         )[:channel_count]
+        colors = get_channel_colors(self.bioimage)
+        colors = [
+            colors[i] if i < len(colors) else "FFFFFF" for i in range(len(labels))
+        ]
         if channel_order is not None:
             labels = [labels[i] for i in channel_order]
+            colors = [colors[i] for i in channel_order]
 
-        return [Channel(label=lab, color="#FFFFFF") for lab in labels]
+        return [Channel(label=lab, color=col) for lab, col in zip(labels, colors)]
 
     def _native_axes_and_shape_for_scene(
         self, scene_index: int
