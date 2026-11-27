@@ -26,56 +26,17 @@ jobs:
           python-version: "3.x"
       - run: pip install check-manifest && check-manifest
   
-  # Check tests pass on multiple Python and OS combinations
+  # Shared test workflow from bioio-base
   test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: [3.11, 3.12, 3.13, 3.14, 3.15]
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+    needs: [lint]
     permissions:
       id-token: write   # This is required for requesting the JWT
       contents: read    # This is required for actions/checkout
+    uses: bioio-devs/bioio-base/.github/workflows/shared_test.yml@main
 
-    steps:
-    - uses: actions/checkout@v7
-      with: 
-        lfs: true # For test files
-    - uses: actions/setup-python@v7
-      with:
-        python-version: ${{ matrix.python-version }}
-    - uses: extractions/setup-just@v4
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install .[test]
-    - name: Run Tests
-      run: just test
-    - name: Upload Codecov
-      uses: codecov/codecov-action@v7
-
-  # Check linting, formating, types, etc.
+  # Shared lint workflow from bioio-base
   lint:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v7
-    - name: Set up Python
-      uses: actions/setup-python@v7
-      with:
-        python-version: "3.13"
-    - uses: extractions/setup-just@v4
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install .[lint]
-    - name: Lint
-      run: just lint
+    uses: bioio-devs/bioio-base/.github/workflows/shared_lint.yml@main
 
   # Publish to PyPI if test, lint, and manifest checks passed
   publish:
